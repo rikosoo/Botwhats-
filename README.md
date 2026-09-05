@@ -216,6 +216,12 @@ profissional e duração, as quatro famílias de lembrete, a conversa inteira de
 remarcação, cancelamento e handoff, e o disparo — segmentação, variáveis, exclusão de opt-out
 e de números repetidos, teto por disparo e envio agendado.
 
+## Próximos passos
+
+As ideias já mapeadas para as próximas versões — régua de follow-up com propósito por toque,
+confirmação que mostra o horário reservado, escassez calculada da agenda e taxa de falta no
+painel — estão em [`docs/roadmap.md`](docs/roadmap.md), cada uma com o ponto do código onde entra.
+
 ## Avisos
 
 - Esta é uma ferramenta de **secretariado**, não um dispositivo médico. Ela não faz triagem clínica,
