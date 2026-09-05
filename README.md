@@ -64,6 +64,49 @@ e consulta cancelada não gera aviso.
 - **Lembretes**: fila do que vai sair, com *enviar agora* e *cancelar*.
 - **Ajustes**: dados do consultório, convênios, valores, o que levar e a agenda de cada profissional — tudo editável sem mexer no código.
 
+## Disparo de mensagens da recepção
+
+Quando você quer falar com um grupo de pacientes — "abrimos horários extras na sexta",
+"não abriremos no feriado", "seu retorno está em aberto" — o painel tem a aba **Disparo**:
+
+1. **Separe os números.** Segmentos prontos, com a contagem de cada um:
+
+   | Segmento | Quem entra |
+   | --- | --- |
+   | Já entraram em contato | Qualquer pessoa que já mandou mensagem |
+   | Sem consulta marcada | Já falaram, mas não têm horário futuro |
+   | Com consulta marcada | Têm consulta futura na agenda |
+   | Aguardando confirmação | Têm consulta futura e ainda não confirmaram |
+   | Faltaram alguma vez | Falta registrada pela recepção |
+   | Já foram atendidos | Compareceram a pelo menos uma consulta |
+   | Sem falar há 30 dias | Último contato há mais de 30 dias |
+   | Todos os cadastros | Inclui quem foi cadastrado sem ter escrito |
+
+   Dá para ajustar na mão: cada paciente da lista tem uma caixinha de seleção, e há
+   **Selecionar filtro**, **Copiar números** e **Baixar CSV**.
+
+2. **Escreva a mensagem**, com variáveis que o bot preenche por paciente:
+   `{primeiro_nome}`, `{nome}`, `{telefone}`, `{convenio}`, `{data_consulta}`, `{hora_consulta}`,
+   `{medico}`, `{consultorio}`, `{telefone_consultorio}`, `{endereco}`.
+   A prévia mostra o texto já preenchido para os primeiros destinatários.
+
+3. **Dispare agora ou agende** (data e hora). O disparo agendado aparece no histórico e pode ser
+   cancelado antes de sair.
+
+![aba de disparo](docs/disparo.png)
+
+### O que o disparo faz por você
+
+- **Nunca envia para quem respondeu "sair"** — mesmo que a pessoa esteja selecionada.
+- **Não repete número** dentro do mesmo disparo.
+- **Envia espaçado** (padrão: 2,5 s entre mensagens) em vez de rajada, e tem **teto por disparo**
+  (padrão: 200). Ajuste em `BROADCAST_DELAY_MS` e `BROADCAST_MAX`.
+- **Mostra o progresso** ao vivo (enviadas / falhas / ignoradas) e guarda o histórico.
+- Cada mensagem entra no **histórico da conversa** do paciente, como qualquer outra.
+
+> Envio em massa é o caminho mais rápido para o número ser bloqueado pelo WhatsApp. Mande só para
+> quem já falou com o consultório e espera notícias suas; nunca para lista comprada.
+
 ## Como rodar
 
 ```bash
@@ -110,6 +153,8 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
+| `BROADCAST_DELAY_MS` | `2500` | Intervalo entre as mensagens de um disparo |
+| `BROADCAST_MAX` | `200` | Teto de destinatários por disparo |
 | `CHROMIUM_PATH` | — | Caminho do Chromium, se o Puppeteer não achar sozinho |
 
 ## API
@@ -130,6 +175,10 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `DELETE` | `/api/bookings/:id` | Cancela consulta e seus lembretes |
 | `POST` | `/api/reminders/:id/send` | Antecipa um lembrete |
 | `DELETE` | `/api/reminders/:id` | Cancela um lembrete |
+| `GET` | `/api/segments/:id` | Quem está no segmento (id, nome, telefone, situação) |
+| `POST` | `/api/broadcast/preview` | Prévia: quantos recebem, quem fica de fora, texto preenchido |
+| `POST` | `/api/broadcast` | Dispara agora ou agenda (`{contactIds, body, scheduledAt}`) |
+| `DELETE` | `/api/broadcast/:id` | Cancela um disparo ainda agendado |
 | `GET`/`PUT` | `/api/clinic` | Dados do consultório |
 | `PUT` | `/api/professionals/:id` | Agenda e dados de um profissional |
 | `GET` | `/api/health` | Status do canal e contadores |
@@ -148,11 +197,12 @@ src/
   core/nlu.js         intenções, números, horários, datas em português
   core/triage.js      sinais de alarme
   core/agenda.js      fuso, grade de horários, reservas por profissional
+  core/broadcast.js   segmentos, variáveis e disparo espaçado
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 39 testes com node:test
+test/                 46 testes com node:test
 ```
 
 ## Testes
@@ -162,8 +212,9 @@ npm test
 ```
 
 Cobrem a triagem de urgência, o entendimento de linguagem natural, a grade de horários por
-profissional e duração, as quatro famílias de lembrete e a conversa inteira de agendamento,
-remarcação, cancelamento e handoff.
+profissional e duração, as quatro famílias de lembrete, a conversa inteira de agendamento,
+remarcação, cancelamento e handoff, e o disparo — segmentação, variáveis, exclusão de opt-out
+e de números repetidos, teto por disparo e envio agendado.
 
 ## Avisos
 
@@ -172,5 +223,7 @@ remarcação, cancelamento e handoff.
 - Antes de usar com pacientes reais, revise os textos de `src/core/messages.js` com o médico
   responsável, confirme as regras do seu conselho profissional sobre comunicação e publicidade, e
   registre a base legal do tratamento de dados (LGPD) para os telefones e cadastros armazenados.
+- Disparo em massa é responsabilidade de quem envia: só mande para pacientes que já procuraram o
+  consultório e mantenha o opt-out funcionando (ele já é automático em `sair`).
 - Os dados ficam em `data/db.json`, sem criptografia. Para uso real, coloque o serviço atrás de
   autenticação, restrinja o acesso ao painel e faça backup do arquivo.

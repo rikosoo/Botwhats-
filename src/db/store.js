@@ -14,6 +14,7 @@ function emptyState() {
     reminders: [],
     bookings: [],
     events: [],
+    campaigns: [],
     clinic: structuredClone(CLINICA_PADRAO),
   };
 }
@@ -194,6 +195,28 @@ class Store extends EventEmitter {
 
   bookingsOf(contactId) {
     return this.state.bookings.filter((b) => b.contactId === contactId);
+  }
+
+  // ---------- disparos ----------
+
+  addCampaign(campaign) {
+    const full = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      status: 'pendente',
+      sent: 0,
+      failed: 0,
+      skipped: 0,
+      ...campaign,
+    };
+    this.state.campaigns.push(full);
+    if (this.state.campaigns.length > 100) this.state.campaigns.splice(0, this.state.campaigns.length - 100);
+    this.commit('campaign', full);
+    return full;
+  }
+
+  getCampaign(id) {
+    return this.state.campaigns.find((c) => c.id === id) || null;
   }
 
   // ---------- linha do tempo do painel ----------

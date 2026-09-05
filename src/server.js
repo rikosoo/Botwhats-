@@ -3,8 +3,10 @@
 const path = require('path');
 const express = require('express');
 
+const { SEGMENTOS, VARIAVEIS } = require('./core/broadcast');
+
 function createServer(app) {
-  const { store, agenda, reminders, channel, config } = app;
+  const { store, agenda, reminders, broadcast, channel, config } = app;
   const server = express();
   server.use(express.json());
   server.use(express.static(path.join(__dirname, '..', 'public')));
@@ -35,6 +37,15 @@ function createServer(app) {
       reminders: store.state.reminders,
       bookings: store.state.bookings,
       events: store.state.events.slice(-120).reverse(),
+      campaigns: store.state.campaigns.slice(-20).reverse(),
+      segments: Object.entries(SEGMENTOS).map(([id, seg]) => ({
+        id,
+        label: seg.label,
+        descricao: seg.descricao,
+        total: broadcast.segmentar(id).length,
+      })),
+      variables: Object.keys(VARIAVEIS),
+      broadcastLimits: { delayMs: config.broadcastDelayMs, max: config.broadcastMaxRecipients },
       dayView: agenda.dayView(hoje),
       agendaDays: agenda.nextAvailableDays(7, {
         professionalId: store.clinic.professionals[0] && store.clinic.professionals[0].id,
@@ -198,6 +209,54 @@ function createServer(app) {
     reminder.status = 'cancelado';
     store.commit('reminder', reminder);
     return res.json(reminder);
+  });
+
+  // ---------- disparo de mensagens ----------
+
+  // Quem está em cada segmento (id, nome, telefone, situação).
+  server.get('/api/segments/:id', (req, res) => {
+    if (!SEGMENTOS[req.params.id]) return res.status(404).json({ error: 'segmento não encontrado' });
+    const contatos = broadcast.segmentar(req.params.id).map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      stage: c.stage,
+      optOut: c.optOut,
+      insurance: c.insurance,
+      lastInboundAt: c.lastInboundAt,
+      nextBooking: agenda.nextBookingOf(c.id),
+    }));
+    return res.json({ segmento: req.params.id, total: contatos.length, contatos });
+  });
+
+  // Prévia: quantos recebem, quem fica de fora e como o texto fica preenchido.
+  server.post('/api/broadcast/preview', (req, res) => {
+    const { contactIds = [], body = '' } = req.body || {};
+    return res.json(broadcast.previa(contactIds, body));
+  });
+
+  server.post('/api/broadcast', (req, res) => {
+    const { contactIds = [], body, segmento = null, scheduledAt = null } = req.body || {};
+    try {
+      const campanha = broadcast.criar({ contactIds, texto: body, segmento, scheduledAt });
+      return res.json(campanha);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  // Cancela um disparo agendado que ainda não saiu.
+  server.delete('/api/broadcast/:id', (req, res) => {
+    const campanha = store.getCampaign(req.params.id);
+    if (!campanha) return res.status(404).json({ error: 'disparo não encontrado' });
+    if (campanha.status !== 'agendado') {
+      return res.status(409).json({ error: 'só dá para cancelar disparo ainda agendado' });
+    }
+    const cancelados = store.cancelReminders((r) => r.campaignId === campanha.id);
+    campanha.status = 'cancelado';
+    store.commit('campaign', campanha);
+    store.logEvent('disparo', `Disparo agendado cancelado (${cancelados} mensagem(ns))`);
+    return res.json(campanha);
   });
 
   // ---------- consultório ----------

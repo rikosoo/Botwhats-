@@ -4,6 +4,7 @@ const { Store } = require('./db/store');
 const { Agenda } = require('./core/agenda');
 const { Reminders } = require('./core/reminders');
 const { Bot } = require('./core/bot');
+const { Broadcast } = require('./core/broadcast');
 const { MockChannel } = require('./channels/mock');
 const { WhatsAppWebChannel } = require('./channels/whatsappWeb');
 
@@ -36,6 +37,7 @@ function createApp(config, { channel } = {}) {
 
   const reminders = new Reminders(store, config, sendText);
   const bot = new Bot(store, agenda, reminders, config);
+  const broadcast = new Broadcast(store, agenda, config, sendText);
 
   const handleIncoming = async ({ phone, name, body }) => {
     const replies = await bot.handleIncoming({ phone, name, body });
@@ -45,7 +47,7 @@ function createApp(config, { channel } = {}) {
 
   chan.onMessage = handleIncoming;
 
-  return { config, store, agenda, reminders, bot, channel: chan, sendText, handleIncoming };
+  return { config, store, agenda, reminders, bot, broadcast, channel: chan, sendText, handleIncoming };
 }
 
 module.exports = { createApp, createChannel };

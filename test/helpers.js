@@ -41,6 +41,8 @@ function makeApp(overrides) {
     for (const body of mensagens) await app.handleIncoming({ phone, name, body });
     return app.store.findContactByPhone(phone);
   };
+  /** Espera o disparo em andamento terminar. */
+  app.emAndamentoDoDisparo = () => app.broadcast.emAndamento || Promise.resolve();
   return app;
 }
 

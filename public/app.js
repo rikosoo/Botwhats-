@@ -6,6 +6,9 @@ const state = {
   filtro: '',
   grupo: localStorage.getItem('grupoPacientes') || 'todos',
   tab: 'hoje',
+  selecionados: new Set(),   // números escolhidos para o disparo
+  segmento: null,            // segmento que preencheu a seleção
+  rascunho: localStorage.getItem('rascunhoDisparo') || '',
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -87,11 +90,13 @@ function render() {
 
   renderKpis();
   renderFiltros();
+  renderSelecao();
   renderContacts();
   renderChat();
   renderHoje();
   renderAgenda();
   renderReminders();
+  renderDisparo();
   renderActivity();
   renderConfig();
 }
@@ -176,6 +181,21 @@ function renderContacts() {
   for (const c of pacientes) {
     const li = el('li');
     if (c.id === state.selected) li.classList.add('active');
+
+    const pick = el('input', 'pick');
+    pick.type = 'checkbox';
+    pick.checked = state.selecionados.has(c.id);
+    pick.title = c.optOut ? 'Pediu para não receber mensagens' : 'Selecionar para disparo';
+    pick.disabled = !!c.optOut;
+    pick.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (pick.checked) state.selecionados.add(c.id);
+      else state.selecionados.delete(c.id);
+      state.segmento = null;
+      renderSelecao();
+      renderDisparo();
+    });
+    li.append(pick);
 
     const row = el('div', 'contact-row');
     row.append(el('span', 'contact-name', nomePaciente(c)));
@@ -458,6 +478,286 @@ function renderReminders() {
       item.append(el('div', 'desc', fmtDataHora(r.sentAt)));
       panel.append(item);
     }
+  }
+}
+
+/** Barra que aparece quando há números escolhidos. */
+function renderSelecao() {
+  const bar = $('#selectionBar');
+  bar.innerHTML = '';
+  const total = state.selecionados.size;
+  bar.classList.toggle('show', total > 0);
+  if (!total) return;
+
+  bar.append(el('span', 'count', `${total} selecionado(s)`));
+  bar.append(botao('Selecionar filtro', () => {
+    for (const c of pacientesDoFiltro()) if (!c.optOut) state.selecionados.add(c.id);
+    state.segmento = null;
+    renderSelecao(); renderContacts(); renderDisparo();
+  }));
+  bar.append(botao('Copiar números', () => copiarNumeros()));
+  bar.append(botao('Limpar', () => {
+    state.selecionados.clear();
+    state.segmento = null;
+    renderSelecao(); renderContacts(); renderDisparo();
+  }));
+  bar.append(botao('Ir para o disparo', () => abrirAba('disparo')));
+}
+
+function pacientesDoFiltro() {
+  const filtro = state.filtro.toLowerCase();
+  return state.data.contacts
+    .filter(passaNoGrupo)
+    .filter((c) => !filtro || (c.name || '').toLowerCase().includes(filtro) || c.phone.includes(filtro));
+}
+
+function selecionadosDetalhe() {
+  return [...state.selecionados].map(pacientePorId).filter(Boolean);
+}
+
+async function copiarNumeros() {
+  const numeros = selecionadosDetalhe().map((c) => c.phone).join('\n');
+  try {
+    await navigator.clipboard.writeText(numeros);
+    toast(`${state.selecionados.size} número(s) copiados`);
+  } catch {
+    prompt('Copie os números:', numeros.replace(/\n/g, ', '));
+  }
+}
+
+function baixarCsv() {
+  const linhas = [['nome', 'telefone', 'convenio', 'situacao', 'proxima_consulta']];
+  for (const c of selecionadosDetalhe()) {
+    linhas.push([
+      c.name || '', c.phone, c.insurance || '', c.stage,
+      c.nextBooking ? `${c.nextBooking.date} ${c.nextBooking.start}` : '',
+    ]);
+  }
+  const csv = linhas.map((l) => l.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(';')).join('\n');
+  const url = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: 'text/csv;charset=utf-8' }));
+  const a = el('a');
+  a.href = url;
+  a.download = `pacientes-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function abrirAba(id) {
+  const tab = document.querySelector(`.tab[data-tab="${id}"]`);
+  if (tab) tab.click();
+}
+
+/** Aba Disparo: escolher o grupo, escrever a mensagem e enviar. */
+function renderDisparo() {
+  const panel = $('#tab-disparo');
+  if (!panel) return;
+  const foco = document.activeElement;
+  const editando = foco && foco.id === 'msgDisparo';
+  if (editando) state.rascunho = foco.value;
+  panel.innerHTML = '';
+  const d = state.data;
+
+  // 1. segmentos prontos
+  panel.append(el('div', 'day-title', '1. Quem vai receber'));
+  const lista = el('div', 'seg-list');
+  for (const seg of d.segments) {
+    const btn = el('button', `seg ${state.segmento === seg.id ? 'active' : ''}`);
+    const info = el('div');
+    info.append(el('div', 'seg-label', seg.label));
+    info.append(el('div', 'seg-desc', seg.descricao));
+    btn.append(info);
+    btn.append(el('span', 'seg-count', String(seg.total)));
+    btn.addEventListener('click', () => carregarSegmento(seg.id));
+    lista.append(btn);
+  }
+  panel.append(lista);
+  panel.append(el('div', 'desc', 'Ou marque os pacientes um a um na lista à esquerda.'));
+
+  const total = state.selecionados.size;
+  const resumo = el('div', 'item');
+  resumo.append(el('div', 'title', total
+    ? `${total} paciente(s) selecionado(s)`
+    : 'Nenhum paciente selecionado ainda'));
+  if (total) {
+    const nomes = selecionadosDetalhe().slice(0, 6).map((c) => c.name || c.phone).join(', ');
+    resumo.append(el('div', 'desc', total > 6 ? `${nomes} e mais ${total - 6}…` : nomes));
+    const acoes = el('div', 'actions');
+    acoes.append(botao('Copiar números', copiarNumeros));
+    acoes.append(botao('Baixar CSV', baixarCsv));
+    acoes.append(botao('Limpar', () => {
+      state.selecionados.clear();
+      state.segmento = null;
+      renderSelecao(); renderContacts(); renderDisparo();
+    }));
+    resumo.append(acoes);
+  }
+  panel.append(resumo);
+
+  // 2. mensagem
+  panel.append(el('div', 'day-title', '2. Sua mensagem'));
+  const campoMsg = el('textarea');
+  campoMsg.id = 'msgDisparo';
+  campoMsg.rows = 5;
+  campoMsg.placeholder = 'Ex.: Oi {primeiro_nome}! Abrimos horários extras nesta sexta. Quer que eu reserve um para você?';
+  campoMsg.value = state.rascunho;
+  campoMsg.addEventListener('input', () => {
+    state.rascunho = campoMsg.value;
+    localStorage.setItem('rascunhoDisparo', campoMsg.value);
+    atualizarPrevia();
+  });
+  const box = el('div', 'field');
+  box.append(campoMsg);
+  panel.append(box);
+
+  const vars = el('div', 'vars');
+  for (const v of d.variables) {
+    const btn = el('button', null, v);
+    btn.title = 'Inserir no texto';
+    btn.addEventListener('click', () => {
+      const alvo = $('#msgDisparo');
+      const pos = alvo.selectionStart || alvo.value.length;
+      alvo.value = `${alvo.value.slice(0, pos)}${v}${alvo.value.slice(pos)}`;
+      state.rascunho = alvo.value;
+      localStorage.setItem('rascunhoDisparo', alvo.value);
+      alvo.focus();
+      alvo.setSelectionRange(pos + v.length, pos + v.length);
+      atualizarPrevia();
+    });
+    vars.append(btn);
+  }
+  panel.append(vars);
+
+  const previa = el('div', 'preview');
+  previa.id = 'previaDisparo';
+  previa.textContent = 'A prévia aparece aqui.';
+  panel.append(previa);
+
+  // 3. envio
+  panel.append(el('div', 'day-title', '3. Enviar'));
+  const linha = el('div', 'send-row');
+  const quando = el('input');
+  quando.type = 'datetime-local';
+  quando.id = 'quandoDisparo';
+  quando.title = 'Deixe vazio para enviar agora';
+  linha.append(quando);
+  const enviar = el('button', null, 'Disparar');
+  enviar.addEventListener('click', dispararAgora);
+  linha.append(enviar);
+  panel.append(linha);
+
+  const limites = d.broadcastLimits || {};
+  panel.append(el('div', 'warn-note',
+    `Envio espaçado em ${(limites.delayMs || 0) / 1000}s entre mensagens, limite de ${limites.max} por disparo. `
+    + 'Quem respondeu "sair" nunca recebe. Mande só para quem já falou com o consultório e espera notícias suas — '
+    + 'disparo para lista comprada derruba o número.'));
+
+  // histórico
+  if (d.campaigns && d.campaigns.length) {
+    panel.append(el('div', 'day-title', 'Disparos recentes'));
+    for (const c of d.campaigns) {
+      const item = el('div', 'item');
+      const row = el('div', 'row');
+      row.append(el('span', 'title', `${c.sent}/${c.total} enviadas`));
+      row.append(el('span', 'badge', c.status));
+      item.append(row);
+      item.append(el('div', 'desc', `${fmtDataHora(c.scheduledAt || c.createdAt)} · ${c.texto.slice(0, 70)}${c.texto.length > 70 ? '…' : ''}`));
+      const barra = el('div', 'bar');
+      const preenchido = el('i');
+      preenchido.style.width = `${c.total ? Math.round((c.sent / c.total) * 100) : 0}%`;
+      barra.append(preenchido);
+      item.append(barra);
+      if (c.status === 'agendado') {
+        const acoes = el('div', 'actions');
+        acoes.append(botao('Cancelar agendamento', async () => {
+          await api(`/api/broadcast/${c.id}`, { method: 'DELETE' });
+          toast('Disparo agendado cancelado');
+          await carregar();
+        }));
+        item.append(acoes);
+      }
+      panel.append(item);
+    }
+  }
+
+  atualizarPrevia();
+  if (editando) {
+    const novo = $('#msgDisparo');
+    novo.focus();
+    novo.setSelectionRange(novo.value.length, novo.value.length);
+  }
+}
+
+async function carregarSegmento(id) {
+  const dados = await api(`/api/segments/${id}`);
+  state.selecionados = new Set(dados.contatos.filter((c) => !c.optOut).map((c) => c.id));
+  state.segmento = id;
+  toast(`${state.selecionados.size} paciente(s) selecionados`);
+  renderSelecao();
+  renderContacts();
+  renderDisparo();
+}
+
+let previaTimer = null;
+function atualizarPrevia() {
+  clearTimeout(previaTimer);
+  previaTimer = setTimeout(async () => {
+    const alvo = $('#previaDisparo');
+    if (!alvo) return;
+    const texto = state.rascunho.trim();
+    if (!texto || !state.selecionados.size) {
+      alvo.textContent = 'Escolha os pacientes e escreva a mensagem para ver a prévia.';
+      return;
+    }
+    try {
+      const p = await api('/api/broadcast/preview', {
+        method: 'POST',
+        body: { contactIds: [...state.selecionados], body: texto },
+      });
+      alvo.innerHTML = '';
+      alvo.append(el('div', 'who', `Prévia para ${p.exemplos.length} de ${p.total} destinatário(s)`
+        + (p.ignorados.length ? ` · ${p.ignorados.length} fora (opt-out/repetido)` : '')));
+      for (const ex of p.exemplos) {
+        const bloco = el('div');
+        bloco.append(el('div', 'who', `→ ${ex.nome} (${ex.phone})`));
+        bloco.append(document.createTextNode(ex.texto));
+        alvo.append(bloco);
+      }
+    } catch (err) {
+      alvo.textContent = err.message;
+    }
+  }, 250);
+}
+
+async function dispararAgora() {
+  const texto = state.rascunho.trim();
+  const quando = $('#quandoDisparo').value;
+  if (!state.selecionados.size) return toast('Selecione ao menos um paciente');
+  if (!texto) return toast('Escreva a mensagem');
+
+  const total = state.selecionados.size;
+  const aviso = quando
+    ? `Agendar o envio para ${total} paciente(s) em ${new Date(quando).toLocaleString('pt-BR')}?`
+    : `Enviar agora para ${total} paciente(s)? Isso manda mensagem de verdade se o WhatsApp estiver conectado.`;
+  if (!confirm(aviso)) return;
+
+  try {
+    await api('/api/broadcast', {
+      method: 'POST',
+      body: {
+        contactIds: [...state.selecionados],
+        body: texto,
+        segmento: state.segmento,
+        scheduledAt: quando ? new Date(quando).toISOString() : null,
+      },
+    });
+    toast(quando ? 'Disparo agendado' : 'Disparo iniciado');
+    state.rascunho = '';
+    localStorage.removeItem('rascunhoDisparo');
+    state.selecionados.clear();
+    state.segmento = null;
+    await carregar();
+  } catch (err) {
+    toast(err.message);
   }
 }
 

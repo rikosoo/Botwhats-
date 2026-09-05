@@ -31,6 +31,10 @@ const config = {
   // (0 desliga; no simulador e nos testes fica desligado).
   typingDelayMs: Number(process.env.TYPING_DELAY_MS || 1200),
 
+  // Disparo em massa: intervalo entre mensagens e teto por disparo.
+  broadcastDelayMs: Number(process.env.BROADCAST_DELAY_MS || 2500),
+  broadcastMaxRecipients: Number(process.env.BROADCAST_MAX || 200),
+
   // Lembretes de follow-up: dias apos o contato de quem ainda nao marcou.
   followUpOffsets: [1, 7, 15],
   // Lembretes da consulta: dias antes do horario marcado (o de 1 dia pede confirmacao).

@@ -82,6 +82,7 @@ class Reminders {
   textoDe(reminder) {
     const contato = this.store.getContact(reminder.contactId);
     if (!contato) return null;
+    if (reminder.text) return reminder.text; // disparo com texto próprio da recepção
 
     if (reminder.kind === 'booking') {
       const consulta = this.store.getBooking(reminder.bookingId);
@@ -90,6 +91,7 @@ class Reminders {
       return M.lembreteConsulta(this.clinic, contato, consulta, reminder.offsetDays, service);
     }
     if (reminder.kind === 'retorno') return M.lembreteRetorno(this.clinic, contato, reminder.offsetDays);
+    if (reminder.kind === 'campanha') return null; // sem texto salvo, não inventa mensagem
     if (reminder.kind === 'falta') return M.lembreteFalta(this.clinic, contato);
     return M.lembreteFollowUp(this.clinic, contato, reminder.offsetDays);
   }
@@ -101,6 +103,7 @@ class Reminders {
     if (reminder.kind === 'followup' && this.store.state.bookings.some(
       (b) => b.contactId === contato.id && b.status === 'confirmado' && new Date(b.startsAt) >= new Date(),
     )) return false; // já marcou nesse meio tempo
+    if (reminder.kind === 'campanha') return true; // já passou pelas regras do disparo
     if (reminder.kind === 'booking' || reminder.kind === 'falta') {
       const consulta = this.store.getBooking(reminder.bookingId);
       if (!consulta) return false;
@@ -157,6 +160,7 @@ class Reminders {
     if (reminder.kind === 'booking') return `Lembrete de consulta (${dias} antes)`;
     if (reminder.kind === 'retorno') return `Lembrete de retorno (${dias})`;
     if (reminder.kind === 'falta') return 'Mensagem de falta';
+    if (reminder.kind === 'campanha') return 'Disparo da recepção';
     return `Follow-up de ${dias}`;
   }
 

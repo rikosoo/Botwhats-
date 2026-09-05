@@ -163,14 +163,20 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .quick button:hover { color: var(--text); }
 
 /* Painel lateral */
-.tabs { display: flex; border-bottom: 1px solid var(--line); background: var(--card-2); }
+.tabs {
+  display: flex; border-bottom: 1px solid var(--line); background: var(--card-2);
+  overflow-x: auto; scrollbar-width: none; flex: 0 0 auto;
+}
+.tabs::-webkit-scrollbar { display: none; }
 .tab {
-  flex: 1; background: transparent; color: var(--muted); border: 0; border-bottom: 2px solid transparent;
-  border-radius: 0; padding: 11px 2px; font-size: 12px; font-weight: 600; white-space: nowrap;
+  flex: 1 0 auto; background: transparent; color: var(--muted); border: 0;
+  border-bottom: 2px solid transparent; border-radius: 0; padding: 11px 9px;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
 }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }
-.tab-panel { display: none; padding: 12px; overflow-y: auto; }
+.tab-panel { display: none; padding: 12px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .tab-panel.active { display: block; }
+.card.side { height: calc(100vh - 190px); }
 
 .day-block { margin-bottom: 14px; }
 .day-title { font-weight: 650; font-size: 13px; margin: 10px 0 7px; }
@@ -281,3 +287,57 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .kpi.danger { border-color: #ef5350; }
 .kpi.danger .value { color: #d32f2f; }
 .quick button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- seleção de números e disparo ---------- */
+
+.selection-bar {
+  display: none; align-items: center; gap: 8px; flex-wrap: wrap;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); background: var(--card-2);
+  font-size: 12.5px;
+}
+.selection-bar.show { display: flex; }
+.selection-bar .count { font-weight: 700; color: var(--text); }
+.selection-bar button { font-size: 11.5px; padding: 4px 9px; }
+
+.contact-list li { position: relative; padding-left: 34px; }
+.pick {
+  position: absolute; left: 10px; top: 12px; width: 16px; height: 16px;
+  accent-color: var(--accent); cursor: pointer;
+}
+
+.seg-list { display: grid; gap: 6px; margin-bottom: 10px; }
+.seg {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  border: 1px solid var(--line); background: var(--card-2); color: var(--text);
+  border-radius: 10px; padding: 8px 11px; text-align: left; font-weight: 500;
+}
+.seg:hover { border-color: var(--accent); }
+.seg.active { border-color: var(--accent); background: rgba(23, 184, 166, .12); }
+.seg .seg-label { font-weight: 600; font-size: 13px; }
+.seg .seg-desc { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+.seg .seg-count {
+  background: var(--bg-soft); border: 1px solid var(--line); border-radius: 999px;
+  padding: 2px 9px; font-size: 12px; font-weight: 700; flex: 0 0 auto;
+}
+
+.vars { display: flex; flex-wrap: wrap; gap: 5px; margin: 6px 0 10px; }
+.vars button {
+  background: var(--bg-soft); color: var(--muted); border: 1px dashed var(--line);
+  font-size: 11px; padding: 3px 8px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.vars button:hover { color: var(--accent); border-color: var(--accent); }
+
+.preview {
+  background: var(--bg-soft); border: 1px solid var(--line); border-radius: 10px;
+  padding: 10px 12px; font-size: 12.5px; white-space: pre-wrap; margin-bottom: 10px;
+}
+.preview .who { color: var(--muted); font-size: 11.5px; margin-bottom: 4px; }
+
+.send-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.send-row input[type="datetime-local"] { flex: 1; min-width: 170px; }
+.warn-note {
+  border-left: 3px solid var(--warn); background: var(--card-2); padding: 8px 11px;
+  border-radius: 0 8px 8px 0; color: var(--muted); font-size: 12px; margin: 10px 0;
+}
+.bar { height: 6px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--accent); }
