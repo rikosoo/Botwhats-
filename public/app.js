@@ -2,9 +2,10 @@
 
 const state = {
   data: null,
-  selected: localStorage.getItem('contatoSelecionado') || null,
+  selected: localStorage.getItem('pacienteSelecionado') || null,
   filtro: '',
-  tab: 'agenda',
+  grupo: localStorage.getItem('grupoPacientes') || 'todos',
+  tab: 'hoje',
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -20,7 +21,7 @@ function toast(msg) {
   node.textContent = msg;
   node.classList.add('show');
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => node.classList.remove('show'), 2600);
+  toast.timer = setTimeout(() => node.classList.remove('show'), 2800);
 }
 
 async function api(path, options) {
@@ -30,29 +31,31 @@ async function api(path, options) {
     body: options && options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || 'Falha na requisicao');
+  if (!res.ok) throw new Error(data.error || 'Falha na requisição');
   return data;
 }
 
-// ---------- formatacao ----------
+// ---------- formatação ----------
 
 const fmtHora = (iso) => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 const fmtDia = (iso) => new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 const fmtDataHora = (iso) => `${fmtDia(iso)} ${fmtHora(iso)}`;
+const diaSemana = (data) => new Date(`${data}T12:00:00`)
+  .toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
 
 function fmtRelativo(iso) {
   const diff = new Date(iso).getTime() - Date.now();
   const dias = Math.round(diff / 86400000);
   const horas = Math.round(diff / 3600000);
-  if (Math.abs(horas) < 1) return diff >= 0 ? 'em minutos' : 'agora ha pouco';
-  if (Math.abs(dias) < 1) return diff >= 0 ? `em ${horas}h` : `ha ${-horas}h`;
-  return diff >= 0 ? `em ${dias} dia(s)` : `ha ${-dias} dia(s)`;
+  if (Math.abs(horas) < 1) return diff >= 0 ? 'em minutos' : 'agora há pouco';
+  if (Math.abs(dias) < 1) return diff >= 0 ? `em ${horas}h` : `há ${-horas}h`;
+  return diff >= 0 ? `em ${dias} dia(s)` : `há ${-dias} dia(s)`;
 }
 
 const escapeHtml = (str) => String(str)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** Converte a formatacao do WhatsApp (*negrito*, _italico_) em HTML seguro. */
+/** Converte a formatação do WhatsApp (*negrito*, _itálico_) em HTML seguro. */
 function formatBody(body) {
   return escapeHtml(body)
     .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
@@ -60,8 +63,8 @@ function formatBody(body) {
     .replace(/\n/g, '<br>');
 }
 
-const contatoPorId = (id) => (state.data.contacts || []).find((c) => c.id === id) || null;
-const nomeContato = (c) => (c ? c.name || c.phone : 'Contato');
+const pacientePorId = (id) => (state.data.contacts || []).find((c) => c.id === id) || null;
+const nomePaciente = (c) => (c ? c.name || c.phone : 'Paciente');
 
 // ---------- render ----------
 
@@ -69,80 +72,133 @@ function render() {
   const d = state.data;
   if (!d) return;
 
-  $('#businessName').textContent = `Painel do Bot · ${d.businessName}`;
-  const status = $('#channelStatus');
-  const online = d.channel.status === 'conectado';
-  status.classList.toggle('online', online);
-  status.querySelector('.label').textContent = d.channel.name === 'mock'
+  $('#clinicName').textContent = d.clinic.name;
+  $('#clinicSub').textContent = `${d.clinic.specialty} · assistente ${d.clinic.assistantName} · ${d.clinic.hoursText}`;
+
+  const aberto = $('#openStatus');
+  aberto.classList.toggle('online', d.aberto);
+  aberto.querySelector('.label').textContent = d.aberto ? 'Atendendo agora' : 'Fora do horário';
+
+  const canal = $('#channelStatus');
+  canal.classList.toggle('online', d.channel.status === 'conectado');
+  canal.querySelector('.label').textContent = d.channel.name === 'mock'
     ? 'Simulador ativo'
     : `WhatsApp: ${d.channel.status}`;
 
   renderKpis();
+  renderFiltros();
   renderContacts();
   renderChat();
+  renderHoje();
   renderAgenda();
   renderReminders();
   renderActivity();
-  renderHorarios();
+  renderConfig();
 }
 
 function renderKpis() {
   const d = state.data;
+  const hojeConsultas = d.bookings.filter((b) => b.date === d.hoje && b.status === 'confirmado');
   const pendentes = d.reminders.filter((r) => r.status === 'pending');
-  const enviados = d.reminders.filter((r) => r.status === 'enviado');
-  const futuros = d.bookings.filter((b) => b.status === 'confirmado' && new Date(b.startsAt) >= new Date());
-  const hoje = new Date().toDateString();
-  const msgsHoje = d.messages.filter((m) => new Date(m.at).toDateString() === hoje);
+  const aguardando = d.bookings.filter(
+    (b) => b.status === 'confirmado' && b.confirmation !== 'confirmado' && new Date(b.startsAt) >= new Date(),
+  );
+  const urgentes = d.contacts.filter((c) => c.priority === 'urgente');
+  const humanos = d.contacts.filter((c) => c.stage === 'atendimento humano');
 
   const kpis = [
-    ['Contatos', d.contacts.length],
-    ['Mensagens hoje', msgsHoje.length],
-    ['Agendamentos', futuros.length],
-    ['Lembretes pendentes', pendentes.length],
-    ['Lembretes enviados', enviados.length],
+    ['Consultas hoje', hojeConsultas.length, ''],
+    ['Aguardando confirmação', aguardando.length, aguardando.length ? 'warn' : ''],
+    ['Na fila da recepção', humanos.length, humanos.length ? 'warn' : ''],
+    ['Urgências', urgentes.length, urgentes.length ? 'danger' : ''],
+    ['Pacientes', d.contacts.length, ''],
+    ['Lembretes pendentes', pendentes.length, ''],
   ];
   const box = $('#kpis');
   box.innerHTML = '';
-  for (const [label, value] of kpis) {
-    const card = el('div', 'kpi');
+  for (const [label, value, tom] of kpis) {
+    const card = el('div', `kpi ${tom}`);
     card.append(el('div', 'value', String(value)), el('div', 'label', label));
     box.append(card);
   }
+}
+
+const GRUPOS = [
+  ['todos', 'Todos'],
+  ['fila', 'Na fila'],
+  ['urgente', 'Urgentes'],
+  ['agendado', 'Agendados'],
+  ['sem-consulta', 'Sem consulta'],
+];
+
+function renderFiltros() {
+  const box = $('#filters');
+  box.innerHTML = '';
+  for (const [id, label] of GRUPOS) {
+    const btn = el('button', state.grupo === id ? 'active' : '', label);
+    btn.addEventListener('click', () => {
+      state.grupo = id;
+      localStorage.setItem('grupoPacientes', id);
+      renderFiltros();
+      renderContacts();
+    });
+    box.append(btn);
+  }
+}
+
+function passaNoGrupo(c) {
+  if (state.grupo === 'fila') return c.stage === 'atendimento humano';
+  if (state.grupo === 'urgente') return c.priority === 'urgente' || c.priority === 'atencao';
+  if (state.grupo === 'agendado') return !!c.nextBooking;
+  if (state.grupo === 'sem-consulta') return !c.nextBooking && !c.optOut;
+  return true;
 }
 
 function renderContacts() {
   const list = $('#contactList');
   list.innerHTML = '';
   const filtro = state.filtro.toLowerCase();
-  const contatos = state.data.contacts
+  const pacientes = state.data.contacts
+    .filter(passaNoGrupo)
     .filter((c) => !filtro || (c.name || '').toLowerCase().includes(filtro) || c.phone.includes(filtro))
-    .sort((a, b) => new Date(b.lastMessage ? b.lastMessage.at : b.createdAt)
-      - new Date(a.lastMessage ? a.lastMessage.at : a.createdAt));
+    .sort((a, b) => {
+      const urgencia = (c) => (c.priority === 'urgente' ? 0 : c.stage === 'atendimento humano' ? 1 : 2);
+      if (urgencia(a) !== urgencia(b)) return urgencia(a) - urgencia(b);
+      return new Date(b.lastMessage ? b.lastMessage.at : b.createdAt)
+        - new Date(a.lastMessage ? a.lastMessage.at : a.createdAt);
+    });
 
-  if (!contatos.length) {
-    list.append(el('div', 'empty', 'Nenhuma conversa ainda. Use "+ Novo" para simular um cliente.'));
+  if (!pacientes.length) {
+    list.append(el('div', 'empty', 'Nenhum paciente neste filtro.'));
     return;
   }
 
-  for (const c of contatos) {
+  for (const c of pacientes) {
     const li = el('li');
     if (c.id === state.selected) li.classList.add('active');
 
     const row = el('div', 'contact-row');
-    row.append(el('span', 'contact-name', nomeContato(c)));
-    row.append(el('span', `badge ${c.stage.replace(/\s+/g, '-')}`, c.stage));
+    row.append(el('span', 'contact-name', nomePaciente(c)));
+    if (c.priority === 'urgente') row.append(el('span', 'badge urgente', 'urgente'));
+    else if (c.stage === 'atendimento humano') row.append(el('span', 'badge atencao', 'na fila'));
+    else row.append(el('span', `badge ${c.stage.replace(/\s+/g, '-')}`, c.stage));
     li.append(row);
 
     const row2 = el('div', 'contact-row');
     row2.append(el('span', 'contact-last', c.lastMessage
-      ? `${c.lastMessage.direction === 'out' ? '↩ ' : ''}${c.lastMessage.body.slice(0, 38)}`
+      ? `${c.lastMessage.direction === 'out' ? '↩ ' : ''}${c.lastMessage.body.slice(0, 36)}`
       : c.phone));
     if (c.lastMessage) row2.append(el('span', 'time', fmtDataHora(c.lastMessage.at)));
     li.append(row2);
 
+    if (c.nextBooking) {
+      li.append(el('div', 'contact-last',
+        `📅 ${fmtDia(c.nextBooking.startsAt)} ${c.nextBooking.start} · ${c.nextBooking.professionalName}`));
+    }
+
     li.addEventListener('click', () => {
       state.selected = c.id;
-      localStorage.setItem('contatoSelecionado', c.id);
+      localStorage.setItem('pacienteSelecionado', c.id);
       render();
     });
     list.append(li);
@@ -151,28 +207,41 @@ function renderContacts() {
 
 function renderChat() {
   const box = $('#messages');
-  const contato = contatoPorId(state.selected);
+  const card = $('#patientCard');
+  const paciente = pacientePorId(state.selected);
   box.innerHTML = '';
+  card.innerHTML = '';
+  card.classList.toggle('show', !!paciente);
 
-  if (!contato) {
-    $('#chatName').textContent = 'Selecione uma conversa';
-    $('#chatMeta').textContent = 'O simulador permite testar o bot sem conectar o WhatsApp';
-    box.append(el('div', 'empty', 'Escolha um contato à esquerda para ver as interações.'));
+  if (!paciente) {
+    $('#chatName').textContent = 'Selecione um paciente';
+    $('#chatMeta').textContent = 'O simulador permite testar o atendimento sem conectar o WhatsApp';
+    box.append(el('div', 'empty', 'Escolha um paciente à esquerda para ver a conversa.'));
     renderQuickReplies();
     return;
   }
 
-  $('#chatName').textContent = nomeContato(contato);
-  const agendamento = state.data.bookings
-    .filter((b) => b.contactId === contato.id && b.status === 'confirmado')
-    .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))[0];
-  $('#chatMeta').textContent = [
-    contato.phone,
-    `etapa: ${contato.state.step}`,
-    agendamento ? `agendado ${fmtDataHora(agendamento.startsAt)}` : 'sem agendamento',
-  ].join(' · ');
+  $('#chatName').textContent = nomePaciente(paciente);
+  $('#chatMeta').textContent = `${paciente.phone} · etapa: ${paciente.state.step}`;
 
-  const msgs = state.data.messages.filter((m) => m.contactId === contato.id);
+  const dados = [
+    ['Nascimento', paciente.birthDate || '—'],
+    ['Convênio', paciente.insurance || '—'],
+    ['Próxima consulta', paciente.nextBooking
+      ? `${fmtDia(paciente.nextBooking.startsAt)} ${paciente.nextBooking.start} · ${paciente.nextBooking.serviceName}`
+      : '—'],
+    ['Confirmação', paciente.nextBooking ? paciente.nextBooking.confirmation : '—'],
+  ];
+  for (const [label, valor] of dados) {
+    const item = el('span');
+    item.append(document.createTextNode(`${label}: `), el('b', null, valor));
+    card.append(item);
+  }
+  if (paciente.notes && paciente.notes.length) {
+    card.append(el('span', null, `📝 ${paciente.notes[paciente.notes.length - 1].text}`));
+  }
+
+  const msgs = state.data.messages.filter((m) => m.contactId === paciente.id);
   if (!msgs.length) box.append(el('div', 'empty', 'Sem mensagens. Envie "oi" pelo simulador.'));
 
   let ultimoDia = null;
@@ -191,64 +260,137 @@ function renderChat() {
   renderQuickReplies();
 }
 
+const ATALHOS = [
+  'Oi', 'Quero marcar uma consulta', 'É primeira consulta', 'Unimed', 'Particular',
+  'Tanto faz', 'Sim', 'Confirmo', 'Preciso remarcar', 'Vocês atendem meu plano?',
+  'Onde fica?', 'Quero falar com a secretária', 'Estou com dor no peito',
+];
+
 function renderQuickReplies() {
   const box = $('#quickReplies');
   box.innerHTML = '';
   if (!state.selected) return;
-  for (const texto of ['Oi', '1', '2', '3', 'AGENDAR', 'SIM', 'MENU', 'CANCELAR', 'SAIR']) {
+  for (const texto of ATALHOS) {
     const btn = el('button', null, texto);
     btn.addEventListener('click', () => enviar('in', texto));
     box.append(btn);
   }
 }
 
+/** Aba Hoje: a agenda do dia por profissional, com confirmação e presença. */
+function renderHoje() {
+  const panel = $('#tab-hoje');
+  panel.innerHTML = '';
+  const d = state.data;
+
+  panel.append(el('div', 'day-title cap', diaSemana(d.hoje)));
+
+  for (const bloco of d.dayView) {
+    const box = el('div', 'prof-block');
+    const head = el('div', 'prof-head');
+    head.append(el('span', 'name', bloco.professional.name));
+    head.append(el('span', 'spec', `${bloco.bookings.length} consulta(s)`));
+    box.append(head);
+
+    if (!bloco.bookings.length) box.append(el('div', 'empty', 'Sem consultas hoje.'));
+
+    for (const b of bloco.bookings) {
+      const paciente = pacientePorId(b.contactId);
+      const item = el('div', `appt ${b.attendance ? 'done' : ''}`);
+
+      const linha = el('div', 'row');
+      linha.append(el('span', 'hour', b.start));
+      linha.append(el('span', 'badge ' + (b.confirmation === 'confirmado' ? 'confirmado' : 'aguardando'),
+        b.confirmation === 'confirmado' ? 'confirmado' : 'a confirmar'));
+      item.append(linha);
+      item.append(el('div', 'who', `${nomePaciente(paciente)} · ${b.serviceName} · ${b.insurance || 'Particular'}`));
+
+      const acoes = el('div', 'actions');
+      if (b.confirmation !== 'confirmado') {
+        acoes.append(botao('Confirmar', () => statusConsulta(b.id, { confirmation: 'confirmado' })));
+      }
+      if (!b.attendance) {
+        acoes.append(botao('Compareceu', () => statusConsulta(b.id, { attendance: 'compareceu' })));
+        acoes.append(botao('Faltou', () => statusConsulta(b.id, { attendance: 'faltou' })));
+      } else {
+        acoes.append(el('span', 'desc', b.attendance === 'compareceu' ? '✅ compareceu' : '⚠️ faltou'));
+      }
+      acoes.append(botao('Cancelar', async () => {
+        await api(`/api/bookings/${b.id}`, { method: 'DELETE' });
+        toast('Consulta cancelada');
+        await carregar();
+      }));
+      item.append(acoes);
+      box.append(item);
+    }
+    panel.append(box);
+  }
+}
+
+function botao(texto, acao) {
+  const btn = el('button', 'ghost', texto);
+  btn.addEventListener('click', acao);
+  return btn;
+}
+
+async function statusConsulta(id, body) {
+  await api(`/api/bookings/${id}/status`, { method: 'POST', body });
+  toast('Consulta atualizada');
+  await carregar();
+}
+
+/** Aba Agenda: próximos dias livres do primeiro profissional, para encaixe manual. */
 function renderAgenda() {
   const panel = $('#tab-agenda');
   panel.innerHTML = '';
-  const contato = contatoPorId(state.selected);
+  const d = state.data;
+  const paciente = pacientePorId(state.selected);
 
-  const proximos = state.data.bookings
+  const futuras = d.bookings
     .filter((b) => b.status === 'confirmado' && new Date(b.startsAt) >= new Date())
     .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
 
-  panel.append(el('div', 'day-title', `Próximos agendamentos (${proximos.length})`));
-  if (!proximos.length) panel.append(el('div', 'empty', 'Nenhum horário marcado.'));
-  for (const b of proximos) {
+  panel.append(el('div', 'day-title', `Próximas consultas (${futuras.length})`));
+  if (!futuras.length) panel.append(el('div', 'empty', 'Nenhuma consulta marcada.'));
+  for (const b of futuras.slice(0, 12)) {
     const item = el('div', 'item');
     const row = el('div', 'row');
-    row.append(el('span', 'title', `${fmtDia(b.startsAt)} · ${b.start} às ${b.end}`));
-    const cancelar = el('button', 'ghost', 'Cancelar');
-    cancelar.addEventListener('click', async () => {
-      await api(`/api/bookings/${b.id}`, { method: 'DELETE' });
-      toast('Agendamento cancelado');
-      await carregar();
-    });
-    row.append(cancelar);
+    row.append(el('span', 'title', `${fmtDia(b.startsAt)} · ${b.start}`));
+    row.append(el('span', 'badge ' + (b.confirmation === 'confirmado' ? 'confirmado' : 'aguardando'),
+      b.confirmation === 'confirmado' ? 'ok' : 'a confirmar'));
     item.append(row);
-    item.append(el('div', 'desc', nomeContato(contatoPorId(b.contactId))));
+    item.append(el('div', 'desc',
+      `${nomePaciente(pacientePorId(b.contactId))} · ${b.serviceName} · ${b.professionalName}`));
     panel.append(item);
   }
 
   panel.append(el('hr'));
-  panel.append(el('div', 'day-title', contato
-    ? `Horários livres — clique para marcar com ${nomeContato(contato)}`
-    : 'Horários livres (selecione um contato para marcar)'));
+  const servico = d.clinic.services[0];
+  panel.append(el('div', 'day-title', paciente
+    ? `Encaixar ${nomePaciente(paciente)} (${servico.name}, ${d.clinic.professionals[0].name})`
+    : 'Horários livres (selecione um paciente para encaixar)'));
 
-  for (const dia of state.data.agendaDays) {
+  for (const dia of d.agendaDays) {
     const bloco = el('div', 'day-block');
-    bloco.append(el('div', 'day-title cap', new Date(`${dia.date}T12:00:00`)
-      .toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' })));
+    bloco.append(el('div', 'day-title cap', diaSemana(dia.date)));
     const slots = el('div', 'slots');
     for (const s of dia.slots) {
       const btn = el('button', 'slot', s.start);
       btn.addEventListener('click', async () => {
-        if (!contato) return toast('Selecione um contato primeiro');
+        if (!paciente) return toast('Selecione um paciente primeiro');
         try {
           await api('/api/bookings', {
             method: 'POST',
-            body: { contactId: contato.id, date: dia.date, start: s.start },
+            body: {
+              contactId: paciente.id,
+              professionalId: s.professionalId,
+              serviceId: servico.id,
+              date: dia.date,
+              start: s.start,
+              insurance: paciente.insurance,
+            },
           });
-          toast(`Agendado ${s.start} em ${dia.date}`);
+          toast(`Encaixado ${s.start} em ${dia.date}`);
           await carregar();
         } catch (err) { toast(err.message); }
       });
@@ -257,10 +399,17 @@ function renderAgenda() {
     bloco.append(slots);
     panel.append(bloco);
   }
-  if (!state.data.agendaDays.length) {
-    panel.append(el('div', 'empty', 'Sem horários livres nos próximos dias. Configure na aba Horários.'));
+  if (!d.agendaDays.length) {
+    panel.append(el('div', 'empty', 'Sem horários livres. Ajuste a agenda na aba Consultório.'));
   }
 }
+
+const ROTULO_LEMBRETE = {
+  followup: '🔔 follow-up',
+  booking: '📅 antes da consulta',
+  retorno: '🔁 retorno',
+  falta: '⚠️ falta',
+};
 
 function renderReminders() {
   const panel = $('#tab-lembretes');
@@ -268,50 +417,44 @@ function renderReminders() {
   const d = state.data;
 
   panel.append(el('div', 'desc',
-    `Follow-up: ${d.offsets.followUp.join('/')} dias após o contato · `
-    + `Agendamento: ${d.offsets.booking.join('/')} dias antes`));
+    `Follow-up ${d.offsets.followUp.join('/')} dias após o contato · `
+    + `${d.offsets.booking.join('/')} dias antes da consulta · retorno conforme o tipo de atendimento`));
 
   const pendentes = d.reminders
     .filter((r) => r.status === 'pending')
     .sort((a, b) => new Date(a.dueAt) - new Date(b.dueAt));
 
-  panel.append(el('div', 'day-title', `Pendentes (${pendentes.length})`));
+  panel.append(el('div', 'day-title', `Programados (${pendentes.length})`));
   if (!pendentes.length) panel.append(el('div', 'empty', 'Nenhum lembrete programado.'));
 
-  for (const r of pendentes) {
+  for (const r of pendentes.slice(0, 40)) {
     const item = el('div', 'item');
     const row = el('div', 'row');
-    row.append(el('span', 'title',
-      `${r.kind === 'booking' ? '📅' : '🔔'} ${r.offsetDays} dia(s) · ${nomeContato(contatoPorId(r.contactId))}`));
+    row.append(el('span', 'title', `${ROTULO_LEMBRETE[r.kind] || r.kind} · ${nomePaciente(pacientePorId(r.contactId))}`));
     row.append(el('span', 'time', fmtRelativo(r.dueAt)));
     item.append(row);
-    item.append(el('div', 'desc',
-      `${r.kind === 'booking' ? 'antes do atendimento' : 'follow-up'} · ${fmtDataHora(r.dueAt)}`));
+    item.append(el('div', 'desc', `${r.offsetDays} dia(s) · ${fmtDataHora(r.dueAt)}`));
 
     const actions = el('div', 'actions');
-    const enviarAgora = el('button', 'ghost', 'Enviar agora');
-    enviarAgora.addEventListener('click', async () => {
+    actions.append(botao('Enviar agora', async () => {
       await api(`/api/reminders/${r.id}/send`, { method: 'POST' });
       toast('Lembrete enviado');
       await carregar();
-    });
-    const cancelar = el('button', 'ghost', 'Cancelar');
-    cancelar.addEventListener('click', async () => {
+    }));
+    actions.append(botao('Cancelar', async () => {
       await api(`/api/reminders/${r.id}`, { method: 'DELETE' });
       await carregar();
-    });
-    actions.append(enviarAgora, cancelar);
+    }));
     item.append(actions);
     panel.append(item);
   }
 
-  const enviados = d.reminders.filter((r) => r.status === 'enviado').slice(-10).reverse();
+  const enviados = d.reminders.filter((r) => r.status === 'enviado').slice(-8).reverse();
   if (enviados.length) {
     panel.append(el('div', 'day-title', 'Enviados recentemente'));
     for (const r of enviados) {
       const item = el('div', 'item');
-      item.append(el('div', 'title',
-        `✅ ${r.offsetDays} dia(s) · ${nomeContato(contatoPorId(r.contactId))}`));
+      item.append(el('div', 'title', `✅ ${ROTULO_LEMBRETE[r.kind] || r.kind} · ${nomePaciente(pacientePorId(r.contactId))}`));
       item.append(el('div', 'desc', fmtDataHora(r.sentAt)));
       panel.append(item);
     }
@@ -338,71 +481,113 @@ function renderActivity() {
 
 const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
-function renderHorarios() {
-  const panel = $('#tab-horarios');
+function campo(label, valor, id, multilinha) {
+  const box = el('div', 'field');
+  box.append(el('label', null, label));
+  const input = el(multilinha ? 'textarea' : 'input');
+  input.id = id;
+  input.value = valor || '';
+  box.append(input);
+  return box;
+}
+
+function renderConfig() {
+  const panel = $('#tab-config');
   panel.innerHTML = '';
-  const av = state.data.availability;
+  const c = state.data.clinic;
 
-  const dur = el('div', 'week-row');
-  dur.append(el('label', null, 'Duração'));
-  const durInput = el('input');
-  durInput.type = 'number';
-  durInput.min = '15';
-  durInput.step = '15';
-  durInput.value = av.slotMinutes;
-  durInput.id = 'slotMinutes';
-  dur.append(durInput);
-  panel.append(dur);
+  panel.append(el('div', 'day-title', 'Dados do consultório'));
+  panel.append(campo('Nome', c.name, 'cfgName'));
+  panel.append(campo('Especialidade', c.specialty, 'cfgSpecialty'));
+  panel.append(campo('Nome da assistente virtual', c.assistantName, 'cfgAssistant'));
+  panel.append(campo('Telefone', c.phone, 'cfgPhone'));
+  panel.append(campo('Horário de funcionamento (texto)', c.hoursText, 'cfgHours'));
+  panel.append(campo('Endereço', c.address, 'cfgAddress', true));
+  panel.append(campo('Referência do endereço', c.addressHint, 'cfgHint', true));
+  panel.append(campo('Convênios aceitos (vírgula)', c.insurances.join(', '), 'cfgInsurances', true));
+  panel.append(campo('Valor particular', c.privatePrice, 'cfgPrice', true));
+  panel.append(campo('O que levar (vírgula)', c.documents.join(', '), 'cfgDocs', true));
 
-  panel.append(el('div', 'desc', 'Faixas por dia, separadas por vírgula. Ex.: 09:00-12:00, 14:00-18:00'));
-
-  for (let dia = 0; dia < 7; dia += 1) {
-    const row = el('div', 'week-row');
-    row.append(el('label', null, DIAS[dia]));
-    const input = el('input');
-    input.type = 'text';
-    input.dataset.dia = String(dia);
-    input.className = 'range-input';
-    input.placeholder = 'fechado';
-    input.value = (av.weekly[dia] || []).map((r) => `${r.start}-${r.end}`).join(', ');
-    row.append(input);
-    panel.append(row);
-  }
-
-  const salvar = el('button', null, 'Salvar horários');
+  const salvar = el('button', null, 'Salvar dados');
   salvar.addEventListener('click', async () => {
-    const weekly = {};
-    let erro = null;
-    for (const input of panel.querySelectorAll('.range-input')) {
-      const faixas = [];
-      for (const parte of input.value.split(',').map((s) => s.trim()).filter(Boolean)) {
-        const m = parte.match(/^(\d{2}:\d{2})\s*-\s*(\d{2}:\d{2})$/);
-        if (!m) { erro = `Faixa inválida em ${DIAS[input.dataset.dia]}: "${parte}"`; break; }
-        faixas.push({ start: m[1], end: m[2] });
-      }
-      weekly[input.dataset.dia] = faixas;
-    }
-    if (erro) return toast(erro);
-    await api('/api/availability', {
+    await api('/api/clinic', {
       method: 'PUT',
-      body: { slotMinutes: Number(durInput.value) || 60, weekly },
+      body: {
+        name: $('#cfgName').value,
+        specialty: $('#cfgSpecialty').value,
+        assistantName: $('#cfgAssistant').value,
+        phone: $('#cfgPhone').value,
+        hoursText: $('#cfgHours').value,
+        address: $('#cfgAddress').value,
+        addressHint: $('#cfgHint').value,
+        insurances: $('#cfgInsurances').value.split(',').map((s) => s.trim()).filter(Boolean),
+        privatePrice: $('#cfgPrice').value,
+        documents: $('#cfgDocs').value.split(',').map((s) => s.trim()).filter(Boolean),
+      },
     });
-    toast('Horários atualizados');
+    toast('Dados atualizados');
     await carregar();
   });
   panel.append(salvar);
+
+  panel.append(el('hr'));
+  panel.append(el('div', 'day-title', 'Agenda dos profissionais'));
+  panel.append(el('div', 'desc', 'Faixas por dia, separadas por vírgula. Ex.: 08:00-12:00, 14:00-18:00. Vazio = não atende.'));
+
+  for (const p of c.professionals) {
+    const bloco = el('div', 'prof-block');
+    const head = el('div', 'prof-head');
+    head.append(el('span', 'name', p.name));
+    head.append(el('span', 'spec', `${p.specialty} · grade ${p.slotMinutes} min`));
+    bloco.append(head);
+
+    for (let dia = 0; dia < 7; dia += 1) {
+      const row = el('div', 'week-row');
+      row.append(el('label', null, DIAS[dia]));
+      const input = el('input');
+      input.type = 'text';
+      input.className = 'range-input';
+      input.dataset.prof = p.id;
+      input.dataset.dia = String(dia);
+      input.placeholder = 'não atende';
+      input.value = (p.weekly[dia] || []).map((r) => `${r.start}-${r.end}`).join(', ');
+      row.append(input);
+      bloco.append(row);
+    }
+
+    const salvarAgenda = el('button', null, `Salvar agenda de ${p.name.split(' ')[0]} ${p.name.split(' ')[1] || ''}`.trim());
+    salvarAgenda.addEventListener('click', async () => {
+      const weekly = {};
+      let erro = null;
+      for (const input of bloco.querySelectorAll('.range-input')) {
+        const faixas = [];
+        for (const parte of input.value.split(',').map((s) => s.trim()).filter(Boolean)) {
+          const m = parte.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+          if (!m) { erro = `Faixa inválida em ${DIAS[input.dataset.dia]}: "${parte}"`; break; }
+          faixas.push({ start: m[1].padStart(5, '0'), end: m[2].padStart(5, '0') });
+        }
+        weekly[input.dataset.dia] = faixas;
+      }
+      if (erro) return toast(erro);
+      await api(`/api/professionals/${p.id}`, { method: 'PUT', body: { weekly } });
+      toast(`Agenda de ${p.name} atualizada`);
+      await carregar();
+    });
+    bloco.append(salvarAgenda);
+    panel.append(bloco);
+  }
 }
 
-// ---------- acoes ----------
+// ---------- ações ----------
 
 async function enviar(direcao, texto) {
-  const contato = contatoPorId(state.selected);
-  if (!contato || !texto.trim()) return;
+  const paciente = pacientePorId(state.selected);
+  if (!paciente || !texto.trim()) return;
   try {
     if (direcao === 'in') {
-      await api('/api/simulate', { method: 'POST', body: { phone: contato.phone, body: texto } });
+      await api('/api/simulate', { method: 'POST', body: { phone: paciente.phone, body: texto } });
     } else {
-      await api('/api/messages', { method: 'POST', body: { contactId: contato.id, body: texto } });
+      await api('/api/messages', { method: 'POST', body: { contactId: paciente.id, body: texto } });
     }
     await carregar();
   } catch (err) {
@@ -423,23 +608,31 @@ function ligarEventos() {
   });
 
   $('#btnNewContact').addEventListener('click', async () => {
-    const phone = prompt('Número do contato (ex.: 5511999999999):');
+    const phone = prompt('Número do paciente (ex.: 5511999999999):');
     if (!phone) return;
-    const body = prompt('Primeira mensagem do cliente:', 'Oi') || 'Oi';
-    await api('/api/simulate', { method: 'POST', body: { phone: phone.replace(/\D/g, ''), body } });
+    const limpo = phone.replace(/\D/g, '');
+    const body = prompt('Primeira mensagem do paciente:', 'Oi, bom dia') || 'Oi';
+    await api('/api/simulate', { method: 'POST', body: { phone: limpo, body } });
     const dados = await api('/api/state');
-    const criado = dados.contacts.find((c) => c.phone === phone.replace(/\D/g, ''));
+    const criado = dados.contacts.find((c) => c.phone === limpo);
     if (criado) {
       state.selected = criado.id;
-      localStorage.setItem('contatoSelecionado', criado.id);
+      localStorage.setItem('pacienteSelecionado', criado.id);
     }
     await carregar();
   });
 
   $('#btnFollowups').addEventListener('click', async () => {
-    if (!state.selected) return toast('Selecione um contato');
+    if (!state.selected) return toast('Selecione um paciente');
     await api(`/api/contacts/${state.selected}/followups`, { method: 'POST' });
     toast('Lembretes de 1/7/15 dias reagendados');
+    await carregar();
+  });
+
+  $('#btnRelease').addEventListener('click', async () => {
+    if (!state.selected) return toast('Selecione um paciente');
+    await api(`/api/contacts/${state.selected}/release`, { method: 'POST' });
+    toast('Conversa devolvida ao atendimento automático');
     await carregar();
   });
 

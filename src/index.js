@@ -11,10 +11,11 @@ async function main() {
   app.reminders.start();
 
   server.listen(config.port, () => {
-    console.log(`\n  ${config.businessName} - painel em http://localhost:${config.port}`);
-    console.log(`  Canal: ${config.channel} | Fuso: ${config.timezone}`);
-    console.log(`  Lembretes: follow-up ${config.followUpOffsets.join('/')} dias e `
-      + `${config.bookingOffsets.join('/')} dias antes do agendamento\n`);
+    const clinica = app.store.clinic;
+    console.log(`\n  ${clinica.name} — painel da recepção em http://localhost:${config.port}`);
+    console.log(`  Canal: ${config.channel} | Fuso: ${config.timezone} | Assistente: ${clinica.assistantName}`);
+    console.log(`  Lembretes: follow-up ${config.followUpOffsets.join('/')} dias · `
+      + `${config.bookingOffsets.join('/')} dias antes da consulta\n`);
   });
 
   try {

@@ -4,106 +4,217 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { makeApp } = require('./helpers');
 
-const texto = (app) => app.sent.map((s) => s.text).join('\n');
+/** Caminho feliz do agendamento, escrito como um paciente escreveria. */
+const AGENDAR = ['oi', 'quero marcar uma consulta', 'primeira consulta', 'unimed', '1', '1', '1', 'Maria Souza', '12/05/1980', 'sim'];
 
-test('responde com saudacao e menu na primeira mensagem', async () => {
+test('primeira mensagem: saudação humanizada, sem menu numérico obrigatório', async () => {
   const app = makeApp();
   await app.handleIncoming({ phone: '5511900001111', name: 'Ana', body: 'oi' });
+  const texto = app.textoEnviado();
 
-  assert.match(texto(app), /(Bom dia|Boa tarde|Boa noite), Ana!/);
-  assert.match(texto(app), /Agendar um horario/);
-  assert.strictEqual(app.store.state.messages.filter((m) => m.direction === 'in').length, 1);
+  assert.match(texto, /(Bom dia|Boa tarde|Boa noite), Ana!/);
+  assert.match(texto, /assistente do Consultorio Dr. Exemplo/);
+  assert.doesNotMatch(texto, /Digite o n[uú]mero/i);
+  assert.match(texto, /🔒/, 'envia o aviso de privacidade uma vez');
 });
 
-test('primeiro contato ja programa os lembretes de 1\/7\/15 dias', async () => {
+test('o aviso de privacidade não se repete', async () => {
   const app = makeApp();
-  await app.handleIncoming({ phone: '5511900002222', body: 'ola' });
-
-  const pendentes = app.store.state.reminders.filter((r) => r.status === 'pending');
-  assert.deepStrictEqual(pendentes.map((r) => r.offsetDays), [1, 7, 15]);
+  const phone = '5511900001112';
+  await app.conversa(phone, ['oi', 'oi de novo']);
+  const avisos = app.sent.filter((s) => s.text.includes('🔒')).length;
+  assert.strictEqual(avisos, 1);
 });
 
-test('fluxo completo de agendamento pelo menu', async () => {
+test('sinal de alarme interrompe tudo e orienta atendimento imediato', async () => {
+  const app = makeApp();
+  const phone = '5511900002222';
+  await app.conversa(phone, ['oi', 'quero marcar', 'estou com dor no peito e falta de ar']);
+
+  const ultima = app.ultima();
+  assert.match(ultima, /192/);
+  assert.match(ultima, /pronto-socorro/i);
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.priority, 'urgente');
+  assert.strictEqual(paciente.stage, 'atendimento humano');
+  assert.ok(app.store.state.events.some((e) => e.type === 'urgencia'));
+});
+
+test('o bot não dá orientação clínica', async () => {
+  const app = makeApp();
+  const phone = '5511900002223';
+  await app.conversa(phone, ['oi', 'posso tomar dipirona antes da consulta?']);
+  assert.match(app.ultima(), /pergunta para o médico avaliar/i);
+});
+
+test('fluxo completo de agendamento em linguagem natural', async () => {
   const app = makeApp();
   const phone = '5511900003333';
-  await app.handleIncoming({ phone, name: 'Bruno', body: 'oi' });
-  await app.handleIncoming({ phone, body: '1' });      // agendar
-  await app.handleIncoming({ phone, body: '1' });      // primeiro dia
-  await app.handleIncoming({ phone, body: '1' });      // primeiro horario
-  await app.handleIncoming({ phone, body: 'sim' });    // confirmar
+  await app.conversa(phone, AGENDAR);
 
-  const booking = app.store.state.bookings[0];
-  assert.ok(booking, 'agendamento criado');
-  assert.strictEqual(booking.status, 'confirmado');
-  assert.match(texto(app), /Agendamento confirmado/);
+  const consulta = app.store.state.bookings[0];
+  assert.ok(consulta, 'consulta criada');
+  assert.strictEqual(consulta.serviceId, 'primeira-consulta');
+  assert.strictEqual(consulta.insurance, 'Unimed');
+  assert.strictEqual(consulta.confirmation, 'aguardando');
 
-  const contato = app.store.findContactByPhone(phone);
-  assert.strictEqual(contato.stage, 'agendado');
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.name, 'Maria Souza');
+  assert.strictEqual(paciente.birthDate, '12/05/1980');
+  assert.strictEqual(paciente.stage, 'agendado');
 
-  // Follow-ups viram lembretes do agendamento.
+  const texto = app.textoEnviado();
+  assert.match(texto, /reservada/i);
+  assert.match(texto, /Rua das Flores/, 'manda o endereço na confirmação');
+  assert.match(texto, /15 minutos de antecedência/);
+  assert.match(texto, /exames anteriores/, 'manda o preparo do tipo de atendimento');
+
+  // Follow-up sai de cena e entram os lembretes da consulta.
   const pendentes = app.store.state.reminders.filter((r) => r.status === 'pending');
   assert.ok(pendentes.length > 0);
   assert.ok(pendentes.every((r) => r.kind === 'booking'));
 });
 
-test('pede o nome quando o contato ainda nao tem cadastro', async () => {
+test('entende escolhas escritas: "tanto faz", nome do médico e "10h"', async () => {
   const app = makeApp();
-  const phone = '5511900004444';
-  await app.handleIncoming({ phone, body: 'oi' });
-  await app.handleIncoming({ phone, body: 'agendar' });
-  await app.handleIncoming({ phone, body: '1' });
-  await app.handleIncoming({ phone, body: '1' });
-  assert.match(texto(app), /Como voce se chama/);
+  const phone = '5511900003334';
+  await app.conversa(phone, ['bom dia', 'preciso de um retorno', 'particular', 'tanto faz']);
+  assert.match(app.ultima(), /Estes são os primeiros dias/);
 
-  await app.handleIncoming({ phone, body: 'Carla Souza' });
-  await app.handleIncoming({ phone, body: 'sim' });
-  assert.strictEqual(app.store.findContactByPhone(phone).name, 'Carla Souza');
-  assert.strictEqual(app.store.state.bookings.length, 1);
+  await app.handleIncoming({ phone, body: 'pode ser o primeiro dia' });
+  const opcoes = app.store.findContactByPhone(phone).state.data.opcoesHorarios;
+  assert.ok(opcoes.length > 0);
+
+  // "08h" é ambíguo quando existem 08:00 e 08:20: o bot pergunta em vez de chutar.
+  await app.handleIncoming({ phone, body: `${opcoes[1].slice(0, 2)}h` });
+  assert.match(app.ultima(), /Qual delas/);
+  assert.strictEqual(app.store.findContactByPhone(phone).state.data.start, undefined);
+
+  await app.handleIncoming({ phone, body: `às ${opcoes[1]}` });
+  assert.strictEqual(app.store.findContactByPhone(phone).state.data.start, opcoes[1]);
 });
 
-test('cancelar libera o horario e volta os follow-ups', async () => {
+test('convênio não atendido vira oferta de particular, sem travar', async () => {
+  const app = makeApp();
+  const phone = '5511900004444';
+  await app.conversa(phone, ['oi', 'quero marcar', 'retorno', 'Golden Cross']);
+  assert.match(app.ultima(), /ainda não atendemos/i);
+
+  await app.handleIncoming({ phone, body: 'pode ser particular então' });
+  assert.match(app.ultima(), /(dias|profissional|prefere)/i);
+  assert.strictEqual(app.store.findContactByPhone(phone).state.data.insurance, 'Particular');
+});
+
+test('dúvidas de convênio, endereço e valores não perdem o agendamento em curso', async () => {
   const app = makeApp();
   const phone = '5511900005555';
-  await app.handleIncoming({ phone, name: 'Duda', body: 'oi' });
-  await app.handleIncoming({ phone, body: '1' });
-  await app.handleIncoming({ phone, body: '1' });
-  await app.handleIncoming({ phone, body: '1' });
-  await app.handleIncoming({ phone, body: 'sim' });
-  await app.handleIncoming({ phone, body: 'cancelar' });
+  await app.conversa(phone, ['oi', 'quero marcar', 'primeira consulta', 'onde fica o consultório?']);
+
+  assert.match(app.ultima(), /Voltando ao agendamento/);
+  assert.strictEqual(app.store.findContactByPhone(phone).state.step, 'agendar_convenio');
+});
+
+test('confirmação de presença registra na consulta', async () => {
+  const app = makeApp();
+  const phone = '5511900006666';
+  await app.conversa(phone, AGENDAR);
+  await app.handleIncoming({ phone, body: 'confirmo minha presença' });
+
+  assert.strictEqual(app.store.state.bookings[0].confirmation, 'confirmado');
+  assert.match(app.ultima(), /Presença confirmada/);
+});
+
+test('remarcar libera o horário antigo e recomeça a escolha', async () => {
+  const app = makeApp();
+  const phone = '5511900007777';
+  await app.conversa(phone, AGENDAR);
+  const antiga = app.store.state.bookings[0];
+
+  await app.handleIncoming({ phone, body: 'preciso remarcar' });
+  assert.strictEqual(app.store.getBooking(antiga.id).status, 'cancelado');
+  assert.match(app.ultima(), /(dias|horário)/i);
+
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.state.data.serviceId, 'primeira-consulta');
+  assert.strictEqual(paciente.state.data.insurance, 'Unimed');
+});
+
+test('cancelar devolve o paciente ao ciclo de follow-up 1/7/15', async () => {
+  const app = makeApp();
+  const phone = '5511900008888';
+  await app.conversa(phone, AGENDAR);
+  await app.handleIncoming({ phone, body: 'não vou poder ir, quero cancelar' });
 
   assert.strictEqual(app.store.state.bookings[0].status, 'cancelado');
   const pendentes = app.store.state.reminders.filter((r) => r.status === 'pending');
   assert.deepStrictEqual(pendentes.map((r) => r.offsetDays), [1, 7, 15]);
 });
 
-test('SAIR cancela os lembretes e marca opt-out', async () => {
+test('pede atendente e o bot silencia até chamarem "menu"', async () => {
   const app = makeApp();
-  const phone = '5511900006666';
-  await app.handleIncoming({ phone, body: 'oi' });
-  await app.handleIncoming({ phone, body: 'sair' });
+  const phone = '5511900009999';
+  await app.conversa(phone, ['oi', 'quero falar com a secretária']);
+  const antes = app.sent.length;
 
-  const contato = app.store.findContactByPhone(phone);
-  assert.strictEqual(contato.optOut, true);
-  assert.strictEqual(app.store.state.reminders.filter((r) => r.status === 'pending').length, 0);
-  assert.match(texto(app), /nao vou mais enviar lembretes/);
+  await app.handleIncoming({ phone, body: 'obrigada, aguardo' });
+  assert.strictEqual(app.sent.length, antes, 'o bot não atropela o atendimento humano');
+
+  await app.handleIncoming({ phone, body: 'menu' });
+  assert.ok(app.sent.length > antes);
 });
 
-test('opcao 4 transfere para atendente e o bot silencia', async () => {
+test('depois de três mensagens sem entender, chama gente de verdade', async () => {
   const app = makeApp();
-  const phone = '5511900007777';
-  await app.handleIncoming({ phone, body: 'oi' });
-  await app.handleIncoming({ phone, body: '4' });
-  const antes = app.sent.length;
-  await app.handleIncoming({ phone, body: 'obrigado' });
+  const phone = '5511900010000';
+  await app.conversa(phone, ['oi', 'xyzabc', 'plft', 'wqwq']);
 
-  assert.strictEqual(app.sent.length, antes, 'bot nao responde apos handoff');
+  assert.match(app.ultima(), /secretária/i);
   assert.strictEqual(app.store.findContactByPhone(phone).stage, 'atendimento humano');
 });
 
-test('opcao invalida repete o menu', async () => {
+test('"sair" encerra os lembretes e o bot respeita', async () => {
   const app = makeApp();
-  const phone = '5511900008888';
-  await app.handleIncoming({ phone, body: 'oi' });
-  await app.handleIncoming({ phone, body: 'blablabla' });
-  assert.match(app.sent.slice(-1)[0].text, /Nao entendi essa opcao/);
+  const phone = '5511900011111';
+  await app.conversa(phone, ['oi', 'não quero mais receber mensagens']);
+
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.optOut, true);
+  assert.strictEqual(app.store.state.reminders.filter((r) => r.status === 'pending').length, 0);
+  assert.match(app.ultima(), /não vou mais enviar lembretes/i);
+});
+
+test('responde dúvidas frequentes sem precisar de menu', async () => {
+  const app = makeApp();
+  const phone = '5511900012222';
+  await app.conversa(phone, ['oi']);
+
+  await app.handleIncoming({ phone, body: 'vocês atendem unimed?' });
+  assert.match(app.ultima(), /Unimed/);
+
+  await app.handleIncoming({ phone, body: 'quanto custa particular?' });
+  assert.match(app.ultima(), /R\$ 400/);
+
+  await app.handleIncoming({ phone, body: 'preciso de jejum?' });
+  assert.match(app.ultima(), /jejum/i);
+
+  await app.handleIncoming({ phone, body: 'o que preciso levar?' });
+  assert.match(app.ultima(), /carteirinha/i);
+});
+
+test('urgência e fila humana não recebem follow-up de marketing', async () => {
+  const app = makeApp();
+  const urgente = '5511900013333';
+  await app.conversa(urgente, ['oi', 'estou com falta de ar']);
+  assert.strictEqual(
+    app.store.state.reminders.filter((r) => r.status === 'pending' && r.kind === 'followup').length,
+    0,
+  );
+
+  const fila = '5511900014444';
+  await app.conversa(fila, ['oi', 'quero falar com a recepção']);
+  const doFila = app.store.findContactByPhone(fila);
+  assert.strictEqual(
+    app.store.state.reminders.filter((r) => r.contactId === doFila.id && r.status === 'pending').length,
+    0,
+  );
 });

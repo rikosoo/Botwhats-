@@ -1,5 +1,7 @@
 'use strict';
 
+const { findService, findProfessional } = require('../clinic');
+
 const WEEKDAY_NAMES = [
   'domingo', 'segunda-feira', 'terca-feira', 'quarta-feira',
   'quinta-feira', 'sexta-feira', 'sabado',
@@ -30,12 +32,10 @@ function zonedToUtc(dateStr, timeStr, timeZone) {
   return new Date(ts);
 }
 
-/** Data local no fuso, no formato YYYY-MM-DD. */
 function dateKey(date, timeZone) {
-  const dtf = new Intl.DateTimeFormat('en-CA', {
+  return new Intl.DateTimeFormat('en-CA', {
     timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
-  });
-  return dtf.format(date);
+  }).format(date);
 }
 
 function timeKey(date, timeZone) {
@@ -51,8 +51,7 @@ function weekdayOf(dateStr) {
 
 function addDaysToKey(dateStr, days) {
   const [y, m, d] = dateStr.split('-').map(Number);
-  const next = new Date(Date.UTC(y, m - 1, d + days));
-  return next.toISOString().slice(0, 10);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
 function formatDateBr(dateStr) {
@@ -64,22 +63,28 @@ function formatDateLong(dateStr) {
   return `${WEEKDAY_NAMES[weekdayOf(dateStr)]}, ${formatDateBr(dateStr)}`;
 }
 
+/** "amanha", "quinta-feira (10/09)" — formato curto e natural para o paciente. */
+function formatDateFriendly(dateStr, hoje) {
+  if (dateStr === hoje) return `hoje (${formatDateBr(dateStr).slice(0, 5)})`;
+  if (dateStr === addDaysToKey(hoje, 1)) return `amanha (${formatDateBr(dateStr).slice(0, 5)})`;
+  return `${WEEKDAY_NAMES[weekdayOf(dateStr)]} (${formatDateBr(dateStr).slice(0, 5)})`;
+}
+
 function toMinutes(timeStr) {
   const [h, m] = timeStr.split(':').map(Number);
   return h * 60 + m;
 }
 
 function fromMinutes(total) {
-  const h = String(Math.floor(total / 60)).padStart(2, '0');
-  const m = String(total % 60).padStart(2, '0');
-  return `${h}:${m}`;
+  return `${String(Math.floor(total / 60)).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
 }
 
-/** Faixas de atendimento configuradas para a data (excecao tem prioridade). */
-function rangesFor(availability, dateStr) {
-  const exception = availability.exceptions ? availability.exceptions[dateStr] : undefined;
+/** Faixas de atendimento do profissional na data (excecao de data tem prioridade). */
+function rangesFor(professional, dateStr) {
+  const exception = professional.exceptions ? professional.exceptions[dateStr] : undefined;
   if (Array.isArray(exception)) return exception;
-  return availability.weekly[String(weekdayOf(dateStr))] || availability.weekly[weekdayOf(dateStr)] || [];
+  const weekly = professional.weekly || {};
+  return weekly[String(weekdayOf(dateStr))] || weekly[weekdayOf(dateStr)] || [];
 }
 
 class Agenda {
@@ -88,8 +93,8 @@ class Agenda {
     this.config = config;
   }
 
-  get availability() {
-    return this.store.state.availability;
+  get clinic() {
+    return this.store.clinic;
   }
 
   get timezone() {
@@ -100,28 +105,63 @@ class Agenda {
     return dateKey(new Date(), this.timezone);
   }
 
-  /** Horarios livres da data: gerados pelas faixas, menos os ja reservados e os que ja passaram. */
-  slotsFor(dateStr, { includePast = false, now = new Date() } = {}) {
-    const availability = this.availability;
-    const step = availability.slotMinutes || 60;
-    const taken = new Set(
-      this.store.state.bookings
-        .filter((b) => b.date === dateStr && b.status === 'confirmado')
-        .map((b) => b.start),
+  now() {
+    return timeKey(new Date(), this.timezone);
+  }
+
+  /** O consultorio esta dentro do horario de funcionamento agora? */
+  isOpenNow(when = new Date()) {
+    const dia = dateKey(when, this.timezone);
+    const agora = toMinutes(timeKey(when, this.timezone));
+    return this.clinic.professionals.some((p) => rangesFor(p, dia)
+      .some((r) => agora >= toMinutes(r.start) && agora < toMinutes(r.end)));
+  }
+
+  professionalsFor(serviceId) {
+    // Todos atendem todos os servicos por padrao; profissionais podem restringir com `services`.
+    return this.clinic.professionals.filter(
+      (p) => !Array.isArray(p.services) || !serviceId || p.services.includes(serviceId),
     );
+  }
+
+  /** Intervalos ja ocupados (em minutos) do profissional na data. */
+  busyIntervals(dateStr, professionalId) {
+    return this.store.state.bookings
+      .filter((b) => b.date === dateStr && b.professionalId === professionalId && b.status === 'confirmado')
+      .map((b) => [toMinutes(b.start), toMinutes(b.end)]);
+  }
+
+  /**
+   * Horarios livres para um servico com um profissional.
+   * A grade anda de `slotMinutes` em `slotMinutes` e o horario so entra
+   * se a duracao inteira do atendimento couber livre na faixa.
+   */
+  slotsFor(dateStr, { professionalId, serviceId, includePast = false, now = new Date() } = {}) {
+    const professional = findProfessional(this.clinic, professionalId) || this.clinic.professionals[0];
+    if (!professional) return [];
+    const service = findService(this.clinic, serviceId);
+    const duracao = service ? service.durationMin : professional.slotMinutes || 30;
+    // A cadencia acompanha a duracao do atendimento: evita oferecer horarios
+    // sobrepostos ao paciente e mantem a agenda do dia sem buracos.
+    const passo = duracao;
+    const ocupados = this.busyIntervals(dateStr, professional.id);
 
     const slots = [];
-    for (const range of rangesFor(availability, dateStr)) {
-      const end = toMinutes(range.end);
-      for (let start = toMinutes(range.start); start + step <= end; start += step) {
-        const startStr = fromMinutes(start);
+    for (const range of rangesFor(professional, dateStr)) {
+      const fim = toMinutes(range.end);
+      for (let inicio = toMinutes(range.start); inicio + duracao <= fim; inicio += passo) {
+        const conflita = ocupados.some(([a, b]) => inicio < b && inicio + duracao > a);
+        if (conflita) continue;
+        const startStr = fromMinutes(inicio);
         const startsAt = zonedToUtc(dateStr, startStr, this.timezone);
         if (!includePast && startsAt.getTime() <= now.getTime()) continue;
-        if (taken.has(startStr)) continue;
         slots.push({
           date: dateStr,
           start: startStr,
-          end: fromMinutes(start + step),
+          end: fromMinutes(inicio + duracao),
+          professionalId: professional.id,
+          professionalName: professional.name,
+          serviceId: service ? service.id : null,
           startsAt: startsAt.toISOString(),
         });
       }
@@ -129,48 +169,72 @@ class Agenda {
     return slots;
   }
 
-  /** Proximos dias que ainda tenham pelo menos um horario livre. */
-  nextAvailableDays(limit = 5, searchDays = 30) {
-    const days = [];
+  /** Proximos dias com pelo menos um horario livre. */
+  nextAvailableDays(limit = 5, options = {}, searchDays = 45) {
+    const dias = [];
     let cursor = this.today();
-    for (let i = 0; i < searchDays && days.length < limit; i += 1) {
-      const slots = this.slotsFor(cursor);
-      if (slots.length) days.push({ date: cursor, slots });
+    for (let i = 0; i < searchDays && dias.length < limit; i += 1) {
+      const slots = this.slotsFor(cursor, options);
+      if (slots.length) dias.push({ date: cursor, slots });
       cursor = addDaysToKey(cursor, 1);
     }
-    return days;
+    return dias;
   }
 
-  isSlotFree(dateStr, startStr) {
-    return this.slotsFor(dateStr, { includePast: true }).some((s) => s.start === startStr)
-      && !this.store.state.bookings.some(
-        (b) => b.date === dateStr && b.start === startStr && b.status === 'confirmado',
-      );
+  /** Agenda do dia por profissional — usado pelo painel da secretaria. */
+  dayView(dateStr) {
+    return this.clinic.professionals.map((p) => ({
+      professional: { id: p.id, name: p.name, specialty: p.specialty },
+      bookings: this.store.state.bookings
+        .filter((b) => b.date === dateStr && b.professionalId === p.id && b.status === 'confirmado')
+        .sort((a, b) => a.start.localeCompare(b.start)),
+      freeSlots: this.slotsFor(dateStr, { professionalId: p.id, includePast: true }).length,
+    }));
   }
 
-  book(contactId, dateStr, startStr, note = '') {
-    if (!this.isSlotFree(dateStr, startStr)) {
+  isSlotFree(dateStr, startStr, { professionalId, serviceId }) {
+    return this.slotsFor(dateStr, { professionalId, serviceId, includePast: true })
+      .some((s) => s.start === startStr);
+  }
+
+  book(contactId, { professionalId, serviceId, date, start, insurance = null, note = '' }) {
+    if (!this.isSlotFree(date, start, { professionalId, serviceId })) {
       throw new Error('Horario indisponivel');
     }
-    const step = this.availability.slotMinutes || 60;
+    const service = findService(this.clinic, serviceId);
+    const professional = findProfessional(this.clinic, professionalId) || this.clinic.professionals[0];
     return this.store.addBooking({
       contactId,
-      date: dateStr,
-      start: startStr,
-      end: fromMinutes(toMinutes(startStr) + step),
-      startsAt: zonedToUtc(dateStr, startStr, this.timezone).toISOString(),
+      professionalId: professional.id,
+      professionalName: professional.name,
+      serviceId: service ? service.id : null,
+      serviceName: service ? service.name : 'Consulta',
+      date,
+      start,
+      end: fromMinutes(toMinutes(start) + (service ? service.durationMin : professional.slotMinutes)),
+      startsAt: zonedToUtc(date, start, this.timezone).toISOString(),
+      insurance,
       note,
     });
   }
 
-  cancel(bookingId) {
+  cancel(bookingId, motivo = null) {
     const booking = this.store.getBooking(bookingId);
     if (!booking || booking.status !== 'confirmado') return null;
     booking.status = 'cancelado';
+    booking.confirmation = 'cancelado';
     booking.cancelledAt = new Date().toISOString();
+    if (motivo) booking.cancelReason = motivo;
     this.store.cancelReminders((r) => r.bookingId === bookingId);
     this.store.commit('booking', booking);
     return booking;
+  }
+
+  /** Proxima consulta futura e confirmada do paciente. */
+  nextBookingOf(contactId, now = new Date()) {
+    return this.store.bookingsOf(contactId)
+      .filter((b) => b.status === 'confirmado' && new Date(b.startsAt).getTime() >= now.getTime())
+      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))[0] || null;
   }
 }
 
@@ -185,6 +249,7 @@ module.exports = {
   addDaysToKey,
   formatDateBr,
   formatDateLong,
+  formatDateFriendly,
   toMinutes,
   fromMinutes,
   rangesFor,

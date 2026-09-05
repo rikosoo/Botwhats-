@@ -5,21 +5,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
 
-const DEFAULT_AVAILABILITY = {
-  slotMinutes: 60,
-  // 0 = domingo ... 6 = sabado
-  weekly: {
-    0: [],
-    1: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
-    2: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
-    3: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
-    4: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '18:00' }],
-    5: [{ start: '09:00', end: '12:00' }, { start: '14:00', end: '17:00' }],
-    6: [],
-  },
-  // { 'YYYY-MM-DD': [] } fecha o dia; com faixas, substitui o horario padrao
-  exceptions: {},
-};
+const { CLINICA_PADRAO } = require('../clinic');
 
 function emptyState() {
   return {
@@ -28,7 +14,7 @@ function emptyState() {
     reminders: [],
     bookings: [],
     events: [],
-    availability: structuredClone(DEFAULT_AVAILABILITY),
+    clinic: structuredClone(CLINICA_PADRAO),
   };
 }
 
@@ -43,16 +29,14 @@ class Store extends EventEmitter {
 
   load() {
     try {
-      if (fs.existsSync(this.file)) {
-        const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-        this.state = { ...emptyState(), ...parsed };
-        this.state.availability = {
-          ...DEFAULT_AVAILABILITY,
-          ...(parsed.availability || {}),
-          weekly: { ...DEFAULT_AVAILABILITY.weekly, ...((parsed.availability || {}).weekly || {}) },
-          exceptions: { ...((parsed.availability || {}).exceptions || {}) },
-        };
-      }
+      if (!fs.existsSync(this.file)) return;
+      const parsed = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      this.state = { ...emptyState(), ...parsed };
+      this.state.clinic = {
+        ...CLINICA_PADRAO,
+        ...(parsed.clinic || {}),
+        policies: { ...CLINICA_PADRAO.policies, ...((parsed.clinic || {}).policies || {}) },
+      };
     } catch (err) {
       console.error('[store] falha ao ler o banco, iniciando vazio:', err.message);
       this.state = emptyState();
@@ -76,13 +60,17 @@ class Store extends EventEmitter {
     fs.renameSync(tmp, this.file);
   }
 
-  /** Aplica uma mudanca, persiste e notifica o painel. */
+  /** Persiste e avisa o painel de que algo mudou. */
   commit(type, payload) {
     this.save();
     this.emit('change', { type, payload });
   }
 
-  // ---------- contatos ----------
+  get clinic() {
+    return this.state.clinic;
+  }
+
+  // ---------- pacientes ----------
 
   findContactByPhone(phone) {
     return this.state.contacts.find((c) => c.phone === phone) || null;
@@ -102,16 +90,30 @@ class Store extends EventEmitter {
       id: crypto.randomUUID(),
       phone,
       name: name || null,
+      birthDate: null,
+      insurance: null,
       createdAt: new Date().toISOString(),
       lastInboundAt: null,
       lastOutboundAt: null,
       stage: 'novo',
+      priority: 'normal',
+      privacyNoticeSentAt: null,
       state: { step: 'inicio', data: {} },
       optOut: false,
+      notes: [],
     };
     this.state.contacts.push(contact);
     this.commit('contact', contact);
     return contact;
+  }
+
+  addNote(contactId, text) {
+    const contact = this.getContact(contactId);
+    if (!contact) return null;
+    const note = { at: new Date().toISOString(), text };
+    contact.notes.push(note);
+    this.commit('contact', contact);
+    return note;
   }
 
   // ---------- mensagens ----------
@@ -170,12 +172,14 @@ class Store extends EventEmitter {
     return count;
   }
 
-  // ---------- agendamentos ----------
+  // ---------- consultas ----------
 
   addBooking(booking) {
     const full = {
       id: crypto.randomUUID(),
-      status: 'confirmado',
+      status: 'confirmado',        // situacao do horario na agenda
+      confirmation: 'aguardando',  // presenca confirmada pelo paciente
+      attendance: null,            // 'compareceu' | 'faltou'
       createdAt: new Date().toISOString(),
       ...booking,
     };
@@ -203,4 +207,4 @@ class Store extends EventEmitter {
   }
 }
 
-module.exports = { Store, DEFAULT_AVAILABILITY, emptyState };
+module.exports = { Store, emptyState };

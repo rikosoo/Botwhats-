@@ -10,8 +10,8 @@ function testConfig(overrides = {}) {
     channel: 'mock',
     port: 0,
     timezone: 'America/Sao_Paulo',
-    businessName: 'Clinica Teste',
     schedulerIntervalMs: 60000,
+    typingDelayMs: 0,
     chromiumPath: null,
     dataFile: path.join(os.tmpdir(), `botwhats-test-${crypto.randomUUID()}.json`),
     followUpOffsets: [1, 7, 15],
@@ -33,6 +33,14 @@ function makeApp(overrides) {
   };
   const app = createApp(testConfig(overrides), { channel });
   app.sent = sent;
+  app.textoEnviado = () => sent.map((s) => s.text).join('\n---\n');
+  app.ultima = () => (sent.length ? sent[sent.length - 1].text : '');
+
+  /** Conversa: manda várias mensagens em sequência pelo mesmo número. */
+  app.conversa = async (phone, mensagens, name = null) => {
+    for (const body of mensagens) await app.handleIncoming({ phone, name, body });
+    return app.store.findContactByPhone(phone);
+  };
   return app;
 }
 

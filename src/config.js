@@ -23,14 +23,17 @@ const config = {
   channel: process.env.CHANNEL || 'mock',
   port: Number(process.env.PORT || 3000),
   timezone: process.env.TZ || 'America/Sao_Paulo',
-  businessName: process.env.BUSINESS_NAME || 'Minha Empresa',
   schedulerIntervalMs: Number(process.env.SCHEDULER_INTERVAL_MS || 30000),
   chromiumPath: process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,
   dataFile: process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json'),
 
-  // Lembretes de follow-up: dias apos o ultimo contato de um lead que nao agendou.
+  // Pausa entre mensagens seguidas, para a conversa nao chegar em bloco
+  // (0 desliga; no simulador e nos testes fica desligado).
+  typingDelayMs: Number(process.env.TYPING_DELAY_MS || 1200),
+
+  // Lembretes de follow-up: dias apos o contato de quem ainda nao marcou.
   followUpOffsets: [1, 7, 15],
-  // Lembretes de agendamento: dias antes do horario marcado.
+  // Lembretes da consulta: dias antes do horario marcado (o de 1 dia pede confirmacao).
   bookingOffsets: [15, 7, 1],
 };
 

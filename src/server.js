@@ -4,36 +4,41 @@ const path = require('path');
 const express = require('express');
 
 function createServer(app) {
-  const { store, agenda, reminders, bot, channel, config } = app;
+  const { store, agenda, reminders, channel, config } = app;
   const server = express();
   server.use(express.json());
   server.use(express.static(path.join(__dirname, '..', 'public')));
 
   const clients = new Set();
-
   store.on('change', (change) => {
     const payload = `data: ${JSON.stringify({ type: change.type })}\n\n`;
     for (const res of clients) res.write(payload);
   });
 
-  /** Snapshot completo usado pelo painel. */
+  /** Snapshot completo usado pelo painel da recepção. */
   function snapshot() {
+    const hoje = agenda.today();
     return {
-      businessName: config.businessName,
+      clinic: store.clinic,
       timezone: config.timezone,
+      hoje,
+      aberto: agenda.isOpenNow(),
       channel: { name: channel.name, status: channel.status, qr: channel.qr || null },
       offsets: { followUp: config.followUpOffsets, booking: config.bookingOffsets },
       contacts: store.state.contacts.map((c) => ({
         ...c,
         messageCount: store.messagesOf(c.id).length,
         lastMessage: store.messagesOf(c.id).slice(-1)[0] || null,
+        nextBooking: agenda.nextBookingOf(c.id),
       })),
       messages: store.state.messages.slice(-800),
       reminders: store.state.reminders,
       bookings: store.state.bookings,
-      events: store.state.events.slice(-100).reverse(),
-      availability: store.state.availability,
-      agendaDays: agenda.nextAvailableDays(7),
+      events: store.state.events.slice(-120).reverse(),
+      dayView: agenda.dayView(hoje),
+      agendaDays: agenda.nextAvailableDays(7, {
+        professionalId: store.clinic.professionals[0] && store.clinic.professionals[0].id,
+      }),
     };
   }
 
@@ -56,18 +61,20 @@ function createServer(app) {
     const { phone, name, body } = req.body || {};
     if (!phone || !body) return res.status(400).json({ error: 'informe phone e body' });
     try {
-      const replies = await app.handleIncoming({ phone: String(phone), name: name || null, body: String(body) });
+      const replies = await app.handleIncoming({
+        phone: String(phone), name: name || null, body: String(body),
+      });
       return res.json({ replies });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
   });
 
-  // Mensagem manual do atendente para o contato.
+  // Mensagem manual da recepção.
   server.post('/api/messages', async (req, res) => {
     const { contactId, body } = req.body || {};
     const contact = store.getContact(contactId);
-    if (!contact) return res.status(404).json({ error: 'contato nao encontrado' });
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
     if (!body) return res.status(400).json({ error: 'informe body' });
     try {
       await app.sendText(contact.phone, String(body));
@@ -77,33 +84,63 @@ function createServer(app) {
     }
   });
 
-  server.get('/api/slots', (req, res) => {
-    const date = req.query.date || agenda.today();
-    res.json({ date, slots: agenda.slotsFor(date) });
+  // ---------- pacientes ----------
+
+  server.patch('/api/contacts/:id', (req, res) => {
+    const contact = store.getContact(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
+    for (const campo of ['name', 'birthDate', 'insurance', 'priority', 'stage']) {
+      if (req.body && req.body[campo] !== undefined) contact[campo] = req.body[campo];
+    }
+    if (req.body && req.body.note) store.addNote(contact.id, req.body.note);
+    store.commit('contact', contact);
+    return res.json(contact);
   });
 
-  server.get('/api/availability', (req, res) => res.json(store.state.availability));
+  server.post('/api/contacts/:id/followups', (req, res) => {
+    const contact = store.getContact(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
+    return res.json(reminders.scheduleFollowUps(contact));
+  });
 
-  server.put('/api/availability', (req, res) => {
-    const { slotMinutes, weekly, exceptions } = req.body || {};
-    const current = store.state.availability;
-    if (slotMinutes) current.slotMinutes = Number(slotMinutes);
-    if (weekly) current.weekly = weekly;
-    if (exceptions) current.exceptions = exceptions;
-    store.commit('availability', current);
-    store.logEvent('agenda', 'Horarios de atendimento atualizados pelo painel');
-    res.json(current);
+  // Devolve a conversa para o bot depois do atendimento humano.
+  server.post('/api/contacts/:id/release', (req, res) => {
+    const contact = store.getContact(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
+    contact.state = { step: 'conversa', data: {} };
+    contact.stage = contact.stage === 'atendimento humano' ? 'ativo' : contact.stage;
+    store.logEvent('handoff', `${contact.name || contact.phone} devolvido ao atendimento automático`);
+    store.commit('contact', contact);
+    return res.json(contact);
+  });
+
+  // ---------- agenda ----------
+
+  server.get('/api/slots', (req, res) => {
+    const date = req.query.date || agenda.today();
+    res.json({
+      date,
+      slots: agenda.slotsFor(date, {
+        professionalId: req.query.professionalId,
+        serviceId: req.query.serviceId,
+      }),
+    });
+  });
+
+  server.get('/api/day', (req, res) => {
+    const date = req.query.date || agenda.today();
+    res.json({ date, agenda: agenda.dayView(date) });
   });
 
   server.post('/api/bookings', (req, res) => {
-    const { contactId, date, start, note } = req.body || {};
+    const { contactId, professionalId, serviceId, date, start, insurance, note } = req.body || {};
     const contact = store.getContact(contactId);
-    if (!contact) return res.status(404).json({ error: 'contato nao encontrado' });
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
     try {
-      const booking = agenda.book(contactId, date, start, note || '');
+      const booking = agenda.book(contactId, { professionalId, serviceId, date, start, insurance, note });
       reminders.scheduleBookingReminders(booking);
       store.cancelReminders((r) => r.contactId === contactId && r.kind === 'followup');
-      store.logEvent('agendamento', `Agendamento criado pelo painel para ${contact.name || contact.phone}`);
+      store.logEvent('agendamento', `Consulta criada pela recepção para ${contact.name || contact.phone}`);
       return res.json(booking);
     } catch (err) {
       return res.status(409).json({ error: err.message });
@@ -111,16 +148,44 @@ function createServer(app) {
   });
 
   server.delete('/api/bookings/:id', (req, res) => {
-    const booking = agenda.cancel(req.params.id);
-    if (!booking) return res.status(404).json({ error: 'agendamento nao encontrado' });
-    store.logEvent('cancelamento', 'Agendamento cancelado pelo painel');
+    const booking = agenda.cancel(req.params.id, 'cancelado pela recepção');
+    if (!booking) return res.status(404).json({ error: 'consulta não encontrada' });
+    store.logEvent('cancelamento', 'Consulta cancelada pela recepção');
     return res.json(booking);
   });
+
+  // Confirmação de presença e comparecimento (fecha o ciclo do lembrete).
+  server.post('/api/bookings/:id/status', (req, res) => {
+    const booking = store.getBooking(req.params.id);
+    if (!booking) return res.status(404).json({ error: 'consulta não encontrada' });
+    const { confirmation, attendance } = req.body || {};
+    const contact = store.getContact(booking.contactId);
+
+    if (confirmation) {
+      booking.confirmation = confirmation;
+      if (confirmation === 'confirmado') booking.confirmedAt = new Date().toISOString();
+    }
+    if (attendance) {
+      booking.attendance = attendance;
+      if (attendance === 'compareceu') {
+        reminders.scheduleReturnReminder(booking);
+        store.logEvent('atendimento', `${contact ? contact.name : ''} compareceu — retorno programado`);
+      }
+      if (attendance === 'faltou') {
+        reminders.scheduleNoShowReminder(booking);
+        store.logEvent('falta', `${contact ? contact.name : ''} faltou à consulta`);
+      }
+    }
+    store.commit('booking', booking);
+    return res.json(booking);
+  });
+
+  // ---------- lembretes ----------
 
   server.post('/api/reminders/:id/send', async (req, res) => {
     const reminder = store.getReminder(req.params.id);
     if (!reminder || reminder.status !== 'pending') {
-      return res.status(404).json({ error: 'lembrete nao encontrado ou ja processado' });
+      return res.status(404).json({ error: 'lembrete não encontrado ou já processado' });
     }
     reminder.dueAt = new Date().toISOString();
     await reminders.tick();
@@ -129,28 +194,51 @@ function createServer(app) {
 
   server.delete('/api/reminders/:id', (req, res) => {
     const reminder = store.getReminder(req.params.id);
-    if (!reminder) return res.status(404).json({ error: 'lembrete nao encontrado' });
+    if (!reminder) return res.status(404).json({ error: 'lembrete não encontrado' });
     reminder.status = 'cancelado';
     store.commit('reminder', reminder);
     return res.json(reminder);
   });
 
-  server.post('/api/contacts/:id/followups', (req, res) => {
-    const contact = store.getContact(req.params.id);
-    if (!contact) return res.status(404).json({ error: 'contato nao encontrado' });
-    const created = reminders.scheduleFollowUps(contact);
-    return res.json(created);
+  // ---------- consultório ----------
+
+  server.get('/api/clinic', (req, res) => res.json(store.clinic));
+
+  server.put('/api/clinic', (req, res) => {
+    const permitido = [
+      'name', 'specialty', 'assistantName', 'address', 'addressHint', 'mapsUrl', 'phone',
+      'hoursText', 'insurances', 'privatePrice', 'paymentInfo', 'documents', 'services', 'policies',
+    ];
+    for (const campo of permitido) {
+      if (req.body && req.body[campo] !== undefined) store.clinic[campo] = req.body[campo];
+    }
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', 'Dados do consultório atualizados');
+    return res.json(store.clinic);
+  });
+
+  server.put('/api/professionals/:id', (req, res) => {
+    const profissional = store.clinic.professionals.find((p) => p.id === req.params.id);
+    if (!profissional) return res.status(404).json({ error: 'profissional não encontrado' });
+    for (const campo of ['name', 'specialty', 'crm', 'slotMinutes', 'weekly', 'exceptions']) {
+      if (req.body && req.body[campo] !== undefined) profissional[campo] = req.body[campo];
+    }
+    store.commit('clinic', store.clinic);
+    store.logEvent('agenda', `Agenda de ${profissional.name} atualizada`);
+    return res.json(profissional);
   });
 
   server.get('/api/health', (req, res) => res.json({
     ok: true,
     channel: channel.name,
     status: channel.status,
-    contatos: store.state.contacts.length,
+    aberto: agenda.isOpenNow(),
+    pacientes: store.state.contacts.length,
+    consultasHoje: store.state.bookings.filter((b) => b.date === agenda.today() && b.status === 'confirmado').length,
     lembretesPendentes: store.state.reminders.filter((r) => r.status === 'pending').length,
   }));
 
-  return { server, bot, snapshot };
+  return { server, snapshot };
 }
 
 module.exports = { createServer };

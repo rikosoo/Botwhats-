@@ -1,280 +1,533 @@
 'use strict';
 
-const { formatDateLong, formatDateBr, timeKey } = require('./agenda');
+const M = require('./messages');
+const nlu = require('./nlu');
+const triage = require('./triage');
+const { findService, findProfessional } = require('../clinic');
+const { timeKey, formatDateBr } = require('./agenda');
 
-function normalize(text) {
-  return String(text || '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .trim()
-    .toLowerCase();
-}
-
-function saudacaoDoDia(timezone, now = new Date()) {
-  const hora = Number(timeKey(now, timezone).slice(0, 2));
-  if (hora < 12) return 'Bom dia';
-  if (hora < 18) return 'Boa tarde';
-  return 'Boa noite';
-}
-
-const MENU = [
-  '*1* - Agendar um horario',
-  '*2* - Ver meus agendamentos',
-  '*3* - Ver horarios disponiveis',
-  '*4* - Falar com um atendente',
-  '*0* - Encerrar o atendimento',
-].join('\n');
-
+/**
+ * Autoatendimento do consultório.
+ *
+ * Regras que valem para tudo o que está aqui:
+ *  - o bot agenda, informa e lembra; ele nunca opina sobre sintomas nem conduta;
+ *  - sinal de alarme interrompe qualquer fluxo e manda procurar atendimento;
+ *  - o paciente pode escrever livremente: número da lista é atalho, não exigência;
+ *  - quando o bot não entende duas vezes seguidas, ele chama gente de verdade.
+ */
 class Bot {
-  /**
-   * @param {import('../db/store').Store} store
-   * @param {import('./agenda').Agenda} agenda
-   * @param {import('./reminders').Reminders} reminders
-   * @param {object} config
-   */
   constructor(store, agenda, reminders, config) {
     this.store = store;
     this.agenda = agenda;
     this.reminders = reminders;
     this.config = config;
-    this.outbox = [];
   }
 
-  /** Ponto de entrada: recebe uma mensagem e devolve as respostas do bot. */
+  get clinic() {
+    return this.store.clinic;
+  }
+
   async handleIncoming({ phone, name, body }) {
-    const contact = this.store.upsertContact(phone, name);
-    const primeiraMensagem = this.store.messagesOf(contact.id).length === 0;
-    this.store.addMessage(contact.id, 'in', body);
+    const contato = this.store.upsertContact(phone, name);
+    const primeiraVez = this.store.messagesOf(contato.id).length === 0;
+    this.store.addMessage(contato.id, 'in', body);
 
-    const replies = await this.route(contact, body, primeiraMensagem);
+    const respostas = await this.responder(contato, body, primeiraVez);
 
-    // Enquanto o lead nao agendar, o relogio de 1/7/15 dias reinicia a cada contato.
-    if (!this.store.bookingsOf(contact.id).some((b) => b.status === 'confirmado') && !contact.optOut) {
-      this.reminders.scheduleFollowUps(contact);
+    // Enquanto o paciente não marcar, o ciclo de 1/7/15 dias reinicia a cada contato.
+    const temConsulta = !!this.agenda.nextBookingOf(contato.id);
+    if (!temConsulta && !contato.optOut && contato.stage !== 'atendimento humano') {
+      this.reminders.scheduleFollowUps(contato);
     }
-    this.store.commit('contact', contact);
-    return replies;
+    this.store.commit('contact', contato);
+    return respostas.filter(Boolean);
   }
 
-  async route(contact, body, primeiraMensagem) {
-    const texto = normalize(body);
-    const step = contact.state.step || 'inicio';
+  // ---------- roteamento ----------
 
-    if (['sair', 'parar', 'stop', 'descadastrar'].includes(texto)) {
-      contact.optOut = true;
-      contact.stage = 'opt-out';
-      contact.state = { step: 'inicio', data: {} };
-      this.store.cancelReminders((r) => r.contactId === contact.id);
-      this.store.logEvent('opt-out', `${contact.name || contact.phone} pediu para nao receber mais mensagens`);
-      return ['Tudo bem, nao vou mais enviar lembretes. Se mudar de ideia, e so mandar uma mensagem por aqui. 👋'];
+  async responder(contato, body, primeiraVez) {
+    const passo = contato.state.step || 'inicio';
+    const intencao = nlu.detectarIntencao(body);
+
+    // 1. Segurança vem antes de qualquer fluxo.
+    const alarme = triage.avaliar(body);
+    if (alarme.nivel === 'emergencia') return this.emergencia(contato, alarme);
+    if (alarme.nivel === 'atencao' && passo !== 'agendar_nome') return this.atencao(contato, alarme);
+
+    // 2. Comandos que valem em qualquer ponto da conversa.
+    if (intencao === 'sair') return this.sair(contato);
+    if (intencao === 'atendente') return this.chamarAtendente(contato);
+
+    if (contato.optOut) {
+      contato.optOut = false;
+      contato.stage = 'ativo';
     }
 
-    if (contact.optOut && texto) {
-      contact.optOut = false;
-      contact.stage = 'ativo';
-    }
+    // Depois do handoff o bot fica em silêncio até pedirem "menu".
+    if (passo === 'atendente' && intencao !== 'ajuda' && intencao !== 'saudacao') return [];
 
-    if (['menu', 'inicio', 'voltar'].includes(texto)) {
-      contact.state = { step: 'menu', data: {} };
-      return [`Sem problemas! O que voce prefere?\n\n${MENU}`];
-    }
-
-    if (['agendar', 'agenda', 'marcar'].includes(texto)) {
-      return this.iniciarAgendamento(contact);
-    }
-
-    if (texto === 'cancelar') {
-      return this.cancelarAgendamento(contact);
-    }
-
-    if (texto === 'confirmar' && step !== 'confirmar') {
-      const proximo = this.proximoAgendamento(contact);
-      if (proximo) {
-        return [`Presenca confirmada para ${formatDateLong(proximo.date)} as ${proximo.start}. Ate la! ✅`];
+    // 3. Se há um agendamento em curso, o passo atual tenta entender primeiro:
+    //    "unimed" no meio do fluxo é a resposta da pergunta, não uma dúvida solta.
+    if (passo.startsWith('agendar_') && !['cancelar', 'remarcar', 'minhas_consultas', 'ajuda'].includes(intencao)) {
+      const resposta = this.tratarPassoDoFluxo(contato, body, intencao, passo);
+      if (resposta) {
+        this.limparErros(contato);
+        return resposta;
       }
     }
 
-    if (primeiraMensagem || step === 'inicio') {
-      return this.saudar(contact);
-    }
+    // 4. Intenções gerais.
+    if (intencao === 'cancelar') return this.cancelar(contato);
+    if (intencao === 'remarcar') return this.remarcar(contato);
+    if (intencao === 'confirmar_presenca') return this.confirmarPresenca(contato);
+    if (intencao === 'minhas_consultas') return this.minhasConsultas(contato);
+    if (intencao === 'endereco') return this.comAjudaExtra(contato, M.endereco(this.clinic));
+    if (intencao === 'convenios') return this.comAjudaExtra(contato, M.convenios(this.clinic));
+    if (intencao === 'valores') return this.comAjudaExtra(contato, M.valores(this.clinic));
+    if (intencao === 'documentos') return this.comAjudaExtra(contato, M.documentos(this.clinic));
+    if (intencao === 'preparo') return this.comAjudaExtra(contato, M.preparo(this.clinic));
+    if (intencao === 'agendar') return this.iniciarAgendamento(contato, {}, body);
+    if (intencao === 'ajuda') return this.saudar(contato, false);
 
-    switch (step) {
-      case 'menu':
-        return this.tratarMenu(contact, texto);
-      case 'escolher_dia':
-        return this.tratarDia(contact, texto);
-      case 'escolher_horario':
-        return this.tratarHorario(contact, texto);
-      case 'pedir_nome':
-        return this.tratarNome(contact, body);
-      case 'confirmar':
-        return this.tratarConfirmacao(contact, texto);
-      case 'atendente':
-        return []; // conversa transferida: o bot fica em silencio
-      default:
-        return this.saudar(contact);
+    if (primeiraVez || passo === 'inicio') return this.saudar(contato, primeiraVez);
+
+    // 5. Conversa solta.
+    if (intencao === 'saudacao') return this.saudar(contato, false);
+    if (intencao === 'agradecimento') return [M.despedida(contato)];
+    if (intencao === 'sim') return this.iniciarAgendamento(contato);
+    if (intencao === 'nao') return ['Sem problema! Estou por aqui se precisar. 🙂'];
+    if (this.pareceDuvidaClinica(body)) return [M.semConselhoMedico()];
+
+    return this.naoEntendi(contato);
+  }
+
+  /** Passos do agendamento. Devolve null quando o passo não entendeu a mensagem. */
+  tratarPassoDoFluxo(contato, body, intencao, passo) {
+    switch (passo) {
+      case 'agendar_servico': return this.tratarServico(contato, body);
+      case 'agendar_convenio': return this.tratarConvenio(contato, body, intencao);
+      case 'agendar_profissional': return this.tratarProfissional(contato, body);
+      case 'agendar_dia': return this.tratarDia(contato, body);
+      case 'agendar_horario': return this.tratarHorario(contato, body);
+      case 'agendar_nome': return this.tratarNome(contato, body, intencao);
+      case 'agendar_nascimento': return this.tratarNascimento(contato, body, intencao);
+      case 'agendar_confirmar': return this.tratarConfirmacao(contato, body, intencao);
+      default: return null;
     }
   }
 
-  saudar(contact) {
-    contact.state = { step: 'menu', data: {} };
-    if (contact.stage === 'novo') contact.stage = 'ativo';
-    const saudacao = saudacaoDoDia(this.config.timezone);
-    const nome = contact.name ? `, ${contact.name.split(' ')[0]}` : '';
-    this.store.logEvent('saudacao', `Saudacao enviada para ${contact.name || contact.phone}`);
-    return [
-      `${saudacao}${nome}! 👋 Eu sou o assistente virtual da *${this.config.businessName}*.`,
-      `Posso te ajudar com:\n\n${MENU}\n\n_Digite o numero da opcao desejada._`,
-    ];
+  /** Perguntas do tipo "posso tomar", "é normal sentir" — o bot não responde, encaminha. */
+  pareceDuvidaClinica(body) {
+    const t = nlu.normalizar(body);
+    return /\b(posso tomar|pode tomar|e normal|é normal|estou sentindo|sinto|dor de|remedio|medicamento|dosagem|efeito colateral|meu exame deu|resultado do exame)\b/.test(t);
   }
 
-  tratarMenu(contact, texto) {
-    if (texto === '1') return this.iniciarAgendamento(contact);
-    if (texto === '2') return this.meusAgendamentos(contact);
-    if (texto === '3') return this.mostrarDisponibilidade(contact);
-    if (texto === '4') {
-      contact.state = { step: 'atendente', data: {} };
-      contact.stage = 'atendimento humano';
-      this.store.logEvent('handoff', `${contact.name || contact.phone} pediu atendimento humano`);
-      return ['Certo! Ja avisei a nossa equipe e em breve alguem assume esta conversa. 🙂\n\nSe quiser voltar ao menu automatico, digite *MENU*.'];
-    }
-    if (texto === '0') {
-      contact.state = { step: 'inicio', data: {} };
-      return ['Atendimento encerrado. Quando precisar, e so chamar. 😊'];
-    }
-    return [`Nao entendi essa opcao. Escolha um numero:\n\n${MENU}`];
+  naoEntendi(contato) {
+    const erros = (contato.state.data.erros || 0) + 1;
+    contato.state.data.erros = erros;
+    if (erros >= 3) return this.chamarAtendente(contato);
+    return [M.naoEntendi(this.clinic, erros)];
   }
 
-  iniciarAgendamento(contact) {
-    const dias = this.agenda.nextAvailableDays(5);
+  limparErros(contato) {
+    if (contato.state.data) contato.state.data.erros = 0;
+  }
+
+  /** Resposta informativa + convite para agendar, sem perder o fio da conversa. */
+  comAjudaExtra(contato, texto) {
+    this.limparErros(contato);
+    if (contato.state.step.startsWith('agendar_')) {
+      return [texto, 'Voltando ao agendamento: ' + this.perguntaAtual(contato)];
+    }
+    contato.state = { step: 'conversa', data: {} };
+    return [texto];
+  }
+
+  /** Repete a pergunta do passo em que o paciente estava. */
+  perguntaAtual(contato) {
+    const dados = contato.state.data || {};
+    switch (contato.state.step) {
+      case 'agendar_servico': return 'é primeira consulta, retorno ou exame?';
+      case 'agendar_convenio': return 'você vai usar convênio ou particular?';
+      case 'agendar_profissional': return 'com qual profissional você prefere?';
+      case 'agendar_dia': return 'qual dia fica melhor?';
+      case 'agendar_horario': return `qual horário prefere em ${formatDateBr(dados.date)}?`;
+      case 'agendar_nome': return 'qual é o seu nome completo?';
+      case 'agendar_nascimento': return 'qual é a sua data de nascimento?';
+      case 'agendar_confirmar': return 'posso reservar esse horário?';
+      default: return 'como posso ajudar?';
+    }
+  }
+
+  // ---------- segurança ----------
+
+  emergencia(contato, alarme) {
+    contato.priority = 'urgente';
+    contato.stage = 'atendimento humano';
+    contato.state = { step: 'atendente', data: {} };
+    this.store.addNote(contato.id, `Triagem: sinal de alarme ("${alarme.termo}")`);
+    // Quem está em situação de risco não recebe mensagem de follow-up.
+    this.store.cancelReminders((r) => r.contactId === contato.id && r.kind === 'followup');
+    this.store.logEvent('urgencia', `🚨 ${contato.name || contato.phone} relatou "${alarme.termo}" — orientado a procurar atendimento imediato`);
+    return [M.emergencia(this.clinic)];
+  }
+
+  atencao(contato, alarme) {
+    contato.priority = 'atencao';
+    this.store.addNote(contato.id, `Triagem: atenção ("${alarme.termo}")`);
+    this.store.logEvent('urgencia', `⚠️ ${contato.name || contato.phone} relatou "${alarme.termo}" — priorizar retorno`);
+    return [M.atencaoClinica(this.clinic)];
+  }
+
+  // ---------- conversa geral ----------
+
+  saudar(contato, primeiraVez) {
+    contato.state = { step: 'conversa', data: {} };
+    if (contato.stage === 'novo') contato.stage = 'ativo';
+    const hora = Number(timeKey(new Date(), this.config.timezone).slice(0, 2));
+    const seed = this.store.messagesOf(contato.id).length;
+    const respostas = [M.saudacao(this.clinic, contato, hora, this.agenda.isOpenNow(), seed)];
+
+    if (!contato.privacyNoticeSentAt) {
+      contato.privacyNoticeSentAt = new Date().toISOString();
+      respostas.push(M.avisoPrivacidade(this.clinic));
+    }
+    if (primeiraVez) this.store.logEvent('saudacao', `Primeiro contato de ${contato.name || contato.phone}`);
+    return respostas;
+  }
+
+  sair(contato) {
+    contato.optOut = true;
+    contato.stage = 'opt-out';
+    contato.state = { step: 'conversa', data: {} };
+    this.store.cancelReminders((r) => r.contactId === contato.id);
+    this.store.logEvent('opt-out', `${contato.name || contato.phone} pediu para não receber mais mensagens`);
+    return [M.optOut(this.clinic)];
+  }
+
+  chamarAtendente(contato) {
+    contato.state = { step: 'atendente', data: {} };
+    contato.stage = 'atendimento humano';
+    // A recepção assume: o bot não fica cobrando por cima do atendimento humano.
+    this.store.cancelReminders((r) => r.contactId === contato.id && r.kind === 'followup');
+    this.store.logEvent('handoff', `${contato.name || contato.phone} aguarda atendimento humano`);
+    return [M.atendente(this.clinic, this.agenda.isOpenNow())];
+  }
+
+  minhasConsultas(contato) {
+    this.limparErros(contato);
+    const consultas = this.store.bookingsOf(contato.id)
+      .filter((b) => b.status === 'confirmado' && new Date(b.startsAt) >= new Date())
+      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
+    contato.state = { step: 'conversa', data: {} };
+    return [M.minhasConsultas(consultas, this.agenda.today())];
+  }
+
+  confirmarPresenca(contato) {
+    const consulta = this.agenda.nextBookingOf(contato.id);
+    if (!consulta) return this.iniciarAgendamento(contato);
+    consulta.confirmation = 'confirmado';
+    consulta.confirmedAt = new Date().toISOString();
+    this.store.commit('booking', consulta);
+    this.store.logEvent('confirmacao', `${contato.name || contato.phone} confirmou presença em ${formatDateBr(consulta.date)} às ${consulta.start}`);
+    return [M.presencaConfirmada(consulta)];
+  }
+
+  cancelar(contato) {
+    const consulta = this.agenda.nextBookingOf(contato.id);
+    if (!consulta) {
+      contato.state = { step: 'conversa', data: {} };
+      return [M.nadaParaCancelar()];
+    }
+    this.agenda.cancel(consulta.id, 'cancelado pelo paciente');
+    contato.stage = 'ativo';
+    contato.state = { step: 'conversa', data: {} };
+    this.reminders.scheduleFollowUps(contato);
+    this.store.logEvent('cancelamento', `${contato.name || contato.phone} cancelou ${formatDateBr(consulta.date)} às ${consulta.start}`);
+    return [M.canceladoComSucesso(this.clinic, consulta)];
+  }
+
+  remarcar(contato) {
+    const consulta = this.agenda.nextBookingOf(contato.id);
+    if (!consulta) return this.iniciarAgendamento(contato);
+    this.agenda.cancel(consulta.id, 'remarcado pelo paciente');
+    this.store.logEvent('remarcacao', `${contato.name || contato.phone} pediu para remarcar ${formatDateBr(consulta.date)} às ${consulta.start}`);
+    const abertura = M.remarcando(consulta);
+    const proximo = this.iniciarAgendamento(contato, { serviceId: consulta.serviceId, insurance: consulta.insurance });
+    return [abertura, ...proximo];
+  }
+
+  // ---------- fluxo de agendamento ----------
+
+  /** Reconhece o tipo de atendimento pelo que a pessoa escreveu ("é um retorno"). */
+  inferirServico(texto) {
+    const t = nlu.normalizar(texto);
+    const porNome = this.clinic.services.find(
+      (s) => t.includes(nlu.normalizar(s.name).split(' ')[0]),
+    );
+    if (porNome) return porNome;
+    if (/primeira vez|nunca vim|nunca consultei|novo paciente/.test(t)) return findService(this.clinic, 'primeira-consulta');
+    if (/revisao|ja sou paciente|ja consultei|mostrar exames/.test(t)) return findService(this.clinic, 'retorno');
+    if (/procedimento|coleta|ultrassom|eletro/.test(t)) return findService(this.clinic, 'exame');
+    return null;
+  }
+
+  iniciarAgendamento(contato, prefill = {}, body = '') {
+    this.limparErros(contato);
+    contato.state = { step: 'agendar_servico', data: { ...prefill, erros: 0 } };
+    const servico = prefill.serviceId ? findService(this.clinic, prefill.serviceId) : this.inferirServico(body);
+    if (servico) return this.definirServico(contato, servico.id);
+    return [M.perguntarServico(this.clinic, contato, this.store.messagesOf(contato.id).length)];
+  }
+
+  definirServico(contato, serviceId) {
+    const service = findService(this.clinic, serviceId);
+    contato.state.data.serviceId = service.id;
+    contato.state.data.serviceName = service.name;
+    if (contato.state.data.insurance) return this.perguntarProfissional(contato);
+    contato.state.step = 'agendar_convenio';
+    return [M.perguntarConvenio(this.clinic)];
+  }
+
+  tratarServico(contato, body) {
+    const numero = nlu.lerNumero(body, this.clinic.services.length);
+    const service = numero ? this.clinic.services[numero - 1] : this.inferirServico(body);
+    if (!service) return null;
+    return this.definirServico(contato, service.id);
+  }
+
+  tratarConvenio(contato, body, intencao) {
+    const texto = nlu.normalizar(body);
+    const dados = contato.state.data;
+
+    if (dados.aguardandoParticular) {
+      dados.aguardandoParticular = false;
+      if (intencao === 'nao') {
+        contato.state = { step: 'conversa', data: {} };
+        return ['Tudo bem! Se mudar de ideia ou quiser confirmar com a secretária, é só me chamar. 🙂'];
+      }
+      dados.insurance = 'Particular';
+      return this.perguntarProfissional(contato);
+    }
+
+    const numero = nlu.lerNumero(body, this.clinic.insurances.length);
+    if (numero) {
+      dados.insurance = this.clinic.insurances[numero - 1];
+      return this.perguntarProfissional(contato);
+    }
+
+    if (/particular|sem convenio|nao tenho plano/.test(texto)) {
+      dados.insurance = 'Particular';
+      return this.perguntarProfissional(contato);
+    }
+
+    const aceito = nlu.lerConvenio(body, this.clinic.insurances);
+    if (aceito) {
+      dados.insurance = aceito;
+      return this.perguntarProfissional(contato);
+    }
+
+    // Citou um plano que não atendemos: oferece particular em vez de travar.
+    if (/\b(convenio|plano|carteirinha)\b/.test(texto) || texto.split(' ').length <= 3) {
+      dados.aguardandoParticular = true;
+      return [M.convenioNaoAtendido(this.clinic, body.trim())];
+    }
+    return null;
+  }
+
+  perguntarProfissional(contato) {
+    this.limparErros(contato);
+    const disponiveis = this.agenda.professionalsFor(contato.state.data.serviceId);
+    if (disponiveis.length === 1) {
+      contato.state.data.professionalId = disponiveis[0].id;
+      return this.perguntarDia(contato);
+    }
+    contato.state.step = 'agendar_profissional';
+    contato.state.data.opcoesProfissionais = disponiveis.map((p) => p.id);
+    return [M.perguntarProfissional(disponiveis)];
+  }
+
+  tratarProfissional(contato, body) {
+    const ids = contato.state.data.opcoesProfissionais || [];
+    const texto = nlu.normalizar(body);
+    if (/tanto faz|qualquer um|o mais proximo|indiferente|voce escolhe/.test(texto)) {
+      contato.state.data.professionalId = null; // usa o primeiro com vaga
+      return this.perguntarDia(contato);
+    }
+    const numero = nlu.lerNumero(body, ids.length);
+    let escolhido = numero ? ids[numero - 1] : null;
+    if (!escolhido) {
+      const achado = this.clinic.professionals.find((p) => {
+        const partes = nlu.normalizar(p.name).split(' ').filter((w) => w.length > 3);
+        return partes.some((w) => texto.includes(w)) || texto.includes(nlu.normalizar(p.specialty));
+      });
+      escolhido = achado ? achado.id : null;
+    }
+    if (!escolhido) return null;
+    contato.state.data.professionalId = escolhido;
+    return this.perguntarDia(contato);
+  }
+
+  /** Opções de agendamento para o serviço/profissional escolhidos. */
+  buscarDias(contato, limite = 4) {
+    const { serviceId, professionalId } = contato.state.data;
+    if (professionalId) {
+      return { professionalId, dias: this.agenda.nextAvailableDays(limite, { professionalId, serviceId }) };
+    }
+    // "Tanto faz": pega o profissional com a agenda mais próxima.
+    let melhor = null;
+    for (const p of this.agenda.professionalsFor(serviceId)) {
+      const dias = this.agenda.nextAvailableDays(limite, { professionalId: p.id, serviceId });
+      if (!dias.length) continue;
+      if (!melhor || dias[0].date < melhor.dias[0].date) melhor = { professionalId: p.id, dias };
+    }
+    return melhor || { professionalId: null, dias: [] };
+  }
+
+  perguntarDia(contato) {
+    const { professionalId, dias } = this.buscarDias(contato);
     if (!dias.length) {
-      contact.state = { step: 'menu', data: {} };
-      return ['No momento nao tenho horarios livres nos proximos dias. 😕 Nossa equipe entra em contato assim que abrir uma vaga.'];
+      contato.state = { step: 'conversa', data: {} };
+      this.store.logEvent('agenda', `Sem horários para ${contato.name || contato.phone}`);
+      return [M.semHorarios(this.clinic)];
     }
-    contact.state = { step: 'escolher_dia', data: { dias: dias.map((d) => d.date) } };
-    const linhas = dias.map((d, i) => `*${i + 1}* - ${formatDateLong(d.date)} (${d.slots.length} horarios)`);
-    return [`Otimo! Escolha o melhor dia para voce:\n\n${linhas.join('\n')}\n\n_Digite o numero do dia ou *MENU* para voltar._`];
+    contato.state.data.professionalId = professionalId;
+    contato.state.step = 'agendar_dia';
+    contato.state.data.opcoesDias = dias.map((d) => d.date);
+    const profissional = findProfessional(this.clinic, professionalId);
+    return [M.perguntarDia(dias, this.agenda.today(), profissional)];
   }
 
-  tratarDia(contact, texto) {
-    const dias = contact.state.data.dias || [];
-    const escolhido = dias[Number(texto) - 1] || (dias.includes(texto) ? texto : null);
+  tratarDia(contato, body) {
+    const dias = contato.state.data.opcoesDias || [];
+    const texto = nlu.normalizar(body);
+    const numero = nlu.lerNumero(body, dias.length);
+    let escolhido = numero ? dias[numero - 1] : null;
+
+    if (!escolhido && /amanha/.test(texto)) {
+      const { addDaysToKey } = require('./agenda');
+      const amanha = addDaysToKey(this.agenda.today(), 1);
+      escolhido = dias.includes(amanha) ? amanha : null;
+    }
+    if (!escolhido && /hoje/.test(texto)) escolhido = dias.includes(this.agenda.today()) ? this.agenda.today() : null;
     if (!escolhido) {
-      const linhas = dias.map((d, i) => `*${i + 1}* - ${formatDateLong(d)}`);
-      return [`Nao encontrei esse dia. Escolha uma das opcoes:\n\n${linhas.join('\n')}`];
+      const dia = texto.match(/\b(\d{1,2})[/-](\d{1,2})\b/);
+      if (dia) {
+        const alvo = `${dia[1].padStart(2, '0')}/${dia[2].padStart(2, '0')}`;
+        escolhido = dias.find((d) => formatDateBr(d).startsWith(alvo)) || null;
+      }
     }
-    const slots = this.agenda.slotsFor(escolhido);
-    if (!slots.length) return this.iniciarAgendamento(contact);
-
-    contact.state = { step: 'escolher_horario', data: { date: escolhido, slots: slots.map((s) => s.start) } };
-    const linhas = slots.map((s, i) => `*${i + 1}* - ${s.start} as ${s.end}`);
-    return [`Horarios livres em ${formatDateLong(escolhido)}:\n\n${linhas.join('\n')}\n\n_Digite o numero do horario ou *VOLTAR*._`];
-  }
-
-  tratarHorario(contact, texto) {
-    const { date, slots = [] } = contact.state.data;
-    const escolhido = slots[Number(texto) - 1] || (slots.includes(texto) ? texto : null);
     if (!escolhido) {
-      const linhas = slots.map((s, i) => `*${i + 1}* - ${s}`);
-      return [`Nao identifiquei esse horario. Opcoes para ${formatDateBr(date)}:\n\n${linhas.join('\n')}`];
+      const semana = ['domingo', 'segunda', 'terca', 'quarta', 'quinta', 'sexta', 'sabado'];
+      const idx = semana.findIndex((nome) => texto.includes(nome));
+      if (idx >= 0) {
+        const { weekdayOf } = require('./agenda');
+        escolhido = dias.find((d) => weekdayOf(d) === idx) || null;
+      }
     }
-    if (!contact.name) {
-      contact.state = { step: 'pedir_nome', data: { date, start: escolhido } };
-      return ['Quase la! Como voce se chama? (nome completo)'];
-    }
-    contact.state = { step: 'confirmar', data: { date, start: escolhido } };
-    return [`Confirmando: *${formatDateLong(date)} as ${escolhido}* em nome de *${contact.name}*.\n\nResponda *SIM* para confirmar ou *VOLTAR* para escolher outro horario.`];
+    if (!escolhido) return null;
+
+    const slots = this.agenda.slotsFor(escolhido, {
+      professionalId: contato.state.data.professionalId,
+      serviceId: contato.state.data.serviceId,
+    });
+    if (!slots.length) return this.perguntarDia(contato);
+
+    const oferecidos = slots.slice(0, 8);
+    contato.state.step = 'agendar_horario';
+    contato.state.data.date = escolhido;
+    contato.state.data.opcoesHorarios = oferecidos.map((s) => s.start);
+    return [M.perguntarHorario(escolhido, oferecidos, this.agenda.today())];
   }
 
-  tratarNome(contact, body) {
-    const nome = String(body || '').trim();
-    if (nome.length < 2) return ['Pode me dizer seu nome, por favor?'];
-    contact.name = nome;
-    const { date, start } = contact.state.data;
-    contact.state = { step: 'confirmar', data: { date, start } };
-    return [`Obrigado, ${nome.split(' ')[0]}! Confirmando: *${formatDateLong(date)} as ${start}*.\n\nResponda *SIM* para confirmar ou *VOLTAR* para escolher outro horario.`];
+  tratarHorario(contato, body) {
+    const horarios = contato.state.data.opcoesHorarios || [];
+    const numero = nlu.lerNumero(body, horarios.length);
+    let escolhido = numero ? horarios[numero - 1] : null;
+    if (!escolhido) {
+      const candidatos = nlu.lerHorarioCandidatos(body, horarios);
+      if (candidatos.length === 1) [escolhido] = candidatos;
+      // "9h" com 09:00, 09:20 e 09:40 livres: pergunta em vez de chutar.
+      if (candidatos.length > 1) {
+        return [`Nesse horário eu tenho ${candidatos.join(', ')}. Qual delas fica melhor?`];
+      }
+    }
+    if (!escolhido) return null;
+
+    contato.state.data.start = escolhido;
+    if (!contato.name) {
+      contato.state.step = 'agendar_nome';
+      return [M.pedirNome()];
+    }
+    if (!contato.birthDate) {
+      contato.state.step = 'agendar_nascimento';
+      return [M.pedirNascimento(contato.name)];
+    }
+    return this.mostrarResumo(contato);
   }
 
-  tratarConfirmacao(contact, texto) {
-    if (!['sim', 's', 'confirmar', 'ok', 'isso', 'confirmo'].includes(texto)) {
-      if (['nao', 'n'].includes(texto)) return this.iniciarAgendamento(contact);
-      return ['Responda *SIM* para confirmar ou *VOLTAR* para escolher outro horario.'];
+  tratarNome(contato, body, intencao) {
+    if (intencao && !['sim', 'nao', 'saudacao'].includes(intencao)) return null;
+    if (!nlu.pareceNome(body)) {
+      return ['Preciso do nome completo para o cadastro (nome e sobrenome). Como você se chama?'];
     }
-    const { date, start } = contact.state.data;
-    let booking;
+    contato.name = body.trim().replace(/\s+/g, ' ');
+    contato.state.step = 'agendar_nascimento';
+    return [M.pedirNascimento(contato.name)];
+  }
+
+  tratarNascimento(contato, body, intencao) {
+    if (intencao && !['sim', 'nao'].includes(intencao)) return null;
+    const data = nlu.lerDataNascimento(body);
+    if (!data) return ['Pode me mandar a data de nascimento no formato dia/mês/ano? Ex.: 12/05/1980.'];
+    contato.birthDate = data;
+    return this.mostrarResumo(contato);
+  }
+
+  mostrarResumo(contato) {
+    const dados = contato.state.data;
+    const profissional = findProfessional(this.clinic, dados.professionalId) || this.clinic.professionals[0];
+    dados.professionalName = profissional.name;
+    dados.serviceName = findService(this.clinic, dados.serviceId).name;
+    contato.state.step = 'agendar_confirmar';
+    return [M.resumoParaConfirmar(this.clinic, contato, dados, this.agenda.today())];
+  }
+
+  tratarConfirmacao(contato, body, intencao) {
+    if (intencao === 'nao') return this.perguntarDia(contato);
+    if (intencao !== 'sim' && intencao !== 'confirmar_presenca') {
+      return ['Só para eu ter certeza: posso reservar esse horário? (responda *sim* ou *não*)'];
+    }
+
+    const dados = contato.state.data;
+    let consulta;
     try {
-      booking = this.agenda.book(contact.id, date, start);
+      consulta = this.agenda.book(contato.id, {
+        professionalId: dados.professionalId,
+        serviceId: dados.serviceId,
+        date: dados.date,
+        start: dados.start,
+        insurance: dados.insurance,
+      });
     } catch {
-      return this.iniciarAgendamento(contact).map((m, i) => (i === 0
-        ? `Poxa, esse horario acabou de ser preenchido. 😕\n\n${m}`
-        : m));
+      return [M.horarioOcupado(), ...this.perguntarDia(contato)];
     }
 
-    contact.stage = 'agendado';
-    contact.state = { step: 'menu', data: {} };
-    this.store.cancelReminders((r) => r.contactId === contact.id && r.kind === 'followup');
-    const criados = this.reminders.scheduleBookingReminders(booking);
+    contato.stage = 'agendado';
+    contato.insurance = dados.insurance || contato.insurance;
+    contato.state = { step: 'conversa', data: {} };
+    this.store.cancelReminders((r) => r.contactId === contato.id && r.kind === 'followup');
+    const criados = this.reminders.scheduleBookingReminders(consulta);
     this.store.logEvent(
       'agendamento',
-      `${contact.name || contact.phone} agendou ${formatDateBr(date)} as ${start}`,
+      `${contato.name} marcou ${consulta.serviceName} com ${consulta.professionalName} em ${formatDateBr(consulta.date)} às ${consulta.start}`,
     );
 
-    const aviso = criados.length
-      ? `Vou te lembrar ${criados.map((r) => `${r.offsetDays}d`).join(', ')} antes.`
-      : 'Ate la!';
-    return [
-      `Agendamento confirmado! ✅\n\n📅 ${formatDateLong(date)}\n🕒 ${booking.start} as ${booking.end}\n👤 ${contact.name}\n\n${aviso}`,
-      'Se precisar remarcar, responda *CANCELAR* a qualquer momento. Para outras opcoes, digite *MENU*.',
-    ];
-  }
-
-  proximoAgendamento(contact) {
-    const agora = Date.now();
-    return this.store
-      .bookingsOf(contact.id)
-      .filter((b) => b.status === 'confirmado' && new Date(b.startsAt).getTime() >= agora)
-      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt))[0] || null;
-  }
-
-  meusAgendamentos(contact) {
-    const proximos = this.store
-      .bookingsOf(contact.id)
-      .filter((b) => b.status === 'confirmado')
-      .sort((a, b) => new Date(a.startsAt) - new Date(b.startsAt));
-    if (!proximos.length) {
-      contact.state = { step: 'menu', data: {} };
-      return ['Voce ainda nao tem horarios marcados. Digite *1* para agendar. 🙂'];
-    }
-    const linhas = proximos.map((b) => `📅 ${formatDateLong(b.date)} as ${b.start}`);
-    return [`Seus agendamentos:\n\n${linhas.join('\n')}\n\nPara desmarcar, responda *CANCELAR*.`];
-  }
-
-  mostrarDisponibilidade(contact) {
-    const dias = this.agenda.nextAvailableDays(5);
-    contact.state = { step: 'menu', data: {} };
-    if (!dias.length) return ['Nao ha horarios livres nos proximos dias.'];
-    const blocos = dias.map(
-      (d) => `*${formatDateLong(d.date)}*\n${d.slots.map((s) => s.start).join(' · ')}`,
-    );
-    return [`Estes sao os horarios disponiveis:\n\n${blocos.join('\n\n')}\n\nDigite *AGENDAR* para reservar um deles.`];
-  }
-
-  cancelarAgendamento(contact) {
-    const proximo = this.proximoAgendamento(contact);
-    if (!proximo) {
-      contact.state = { step: 'menu', data: {} };
-      return ['Nao encontrei nenhum horario marcado no seu nome. Digite *MENU* para ver as opcoes.'];
-    }
-    this.agenda.cancel(proximo.id);
-    contact.stage = 'ativo';
-    contact.state = { step: 'menu', data: {} };
-    this.reminders.scheduleFollowUps(contact);
-    this.store.logEvent(
-      'cancelamento',
-      `${contact.name || contact.phone} cancelou ${formatDateBr(proximo.date)} as ${proximo.start}`,
-    );
-    return [`Agendamento de ${formatDateLong(proximo.date)} as ${proximo.start} cancelado. 🗑️\n\nQuer escolher outro horario? Digite *AGENDAR*.`];
+    const service = findService(this.clinic, consulta.serviceId);
+    const respostas = [M.agendamentoConfirmado(this.clinic, contato, consulta, service)];
+    if (criados.length) respostas.push(M.avisoLembretes(criados.map((r) => r.offsetDays)));
+    return respostas;
   }
 }
 
-module.exports = { Bot, normalize, saudacaoDoDia, MENU };
+module.exports = { Bot };

@@ -18,8 +18,18 @@ function createApp(config, { channel } = {}) {
   const agenda = new Agenda(store, config);
   const chan = channel || createChannel(config);
 
+  // Mensagens longas ganham uma pausa proporcional ao tamanho, como alguem
+  // digitando do outro lado. So vale no canal real.
+  const pausar = async (text) => {
+    const base = config.typingDelayMs || 0;
+    if (!base || chan.name === 'mock' || chan.name === 'test') return;
+    const espera = Math.min(base + text.length * 12, 4000);
+    await new Promise((resolve) => setTimeout(resolve, espera));
+  };
+
   const sendText = async (phone, text) => {
     const contact = store.upsertContact(phone);
+    await pausar(text);
     await chan.sendText(phone, text);
     return store.addMessage(contact.id, 'out', text, { channel: chan.name });
   };

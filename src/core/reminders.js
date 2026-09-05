@@ -1,12 +1,9 @@
 'use strict';
 
-const { formatDateLong } = require('./agenda');
+const M = require('./messages');
+const { findService } = require('../clinic');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-
-function plural(days) {
-  return days === 1 ? '1 dia' : `${days} dias`;
-}
 
 class Reminders {
   /**
@@ -21,111 +18,146 @@ class Reminders {
     this.timer = null;
   }
 
+  get clinic() {
+    return this.store.clinic;
+  }
+
   /**
-   * Lembretes de follow-up: 1, 7 e 15 dias depois do contato, para quem ainda nao agendou.
-   * Sempre reagenda a partir do contato mais recente.
+   * Follow-up de quem procurou o consultório e não marcou: 1, 7 e 15 dias
+   * depois do contato. Reagenda a partir da conversa mais recente.
    */
   scheduleFollowUps(contact, from = new Date()) {
     this.store.cancelReminders((r) => r.contactId === contact.id && r.kind === 'followup');
-    const created = [];
-    for (const days of this.config.followUpOffsets) {
-      created.push(this.store.addReminder({
-        contactId: contact.id,
-        kind: 'followup',
-        offsetDays: days,
-        dueAt: new Date(from.getTime() + days * DAY_MS).toISOString(),
-        text: null,
-      }));
-    }
-    return created;
+    return this.config.followUpOffsets.map((days) => this.store.addReminder({
+      contactId: contact.id,
+      kind: 'followup',
+      offsetDays: days,
+      dueAt: new Date(from.getTime() + days * DAY_MS).toISOString(),
+    }));
   }
 
-  /** Lembretes do agendamento: 15, 7 e 1 dia antes do horario marcado. */
+  /** Lembretes da consulta: 15, 7 e 1 dia antes (o de 1 dia pede confirmação). */
   scheduleBookingReminders(booking, now = new Date()) {
     const startsAt = new Date(booking.startsAt).getTime();
-    const created = [];
+    const criados = [];
     for (const days of this.config.bookingOffsets) {
       const dueAt = startsAt - days * DAY_MS;
-      if (dueAt <= now.getTime()) continue; // janela ja passou
-      created.push(this.store.addReminder({
+      if (dueAt <= now.getTime()) continue; // a janela já passou
+      criados.push(this.store.addReminder({
         contactId: booking.contactId,
         bookingId: booking.id,
         kind: 'booking',
         offsetDays: days,
         dueAt: new Date(dueAt).toISOString(),
-        text: null,
       }));
     }
-    return created;
+    return criados;
   }
 
-  buildText(reminder) {
-    if (reminder.text) return reminder.text;
-    const contact = this.store.getContact(reminder.contactId);
-    const nome = contact && contact.name ? contact.name.split(' ')[0] : 'tudo bem';
+  /** Retorno sugerido depois da consulta (usa returnDays do tipo de atendimento). */
+  scheduleReturnReminder(booking, now = new Date()) {
+    const service = findService(this.clinic, booking.serviceId);
+    const dias = service && service.returnDays ? service.returnDays : 0;
+    if (!dias) return null;
+    return this.store.addReminder({
+      contactId: booking.contactId,
+      bookingId: booking.id,
+      kind: 'retorno',
+      offsetDays: dias,
+      dueAt: new Date(new Date(booking.startsAt).getTime() + dias * DAY_MS).toISOString(),
+    });
+  }
+
+  /** Falta: mensagem de reaproximação no dia seguinte. */
+  scheduleNoShowReminder(booking, now = new Date()) {
+    return this.store.addReminder({
+      contactId: booking.contactId,
+      bookingId: booking.id,
+      kind: 'falta',
+      offsetDays: 1,
+      dueAt: new Date(now.getTime() + DAY_MS).toISOString(),
+    });
+  }
+
+  textoDe(reminder) {
+    const contato = this.store.getContact(reminder.contactId);
+    if (!contato) return null;
 
     if (reminder.kind === 'booking') {
-      const booking = this.store.getBooking(reminder.bookingId);
-      if (!booking) return null;
-      const quando = `${formatDateLong(booking.date)} as ${booking.start}`;
-      if (reminder.offsetDays === 1) {
-        return `Ola ${nome}! Passando para lembrar do seu atendimento amanha, ${quando}.\n`
-          + 'Responda CONFIRMAR para manter ou CANCELAR se precisar remarcar.';
-      }
-      return `Ola ${nome}! Faltam ${plural(reminder.offsetDays)} para o seu atendimento em ${quando}.\n`
-        + 'Se precisar remarcar, e so responder CANCELAR.';
+      const consulta = this.store.getBooking(reminder.bookingId);
+      if (!consulta) return null;
+      const service = findService(this.clinic, consulta.serviceId);
+      return M.lembreteConsulta(this.clinic, contato, consulta, reminder.offsetDays, service);
     }
-
-    const mensagens = {
-      1: `Ola ${nome}! Ontem voce falou com a ${this.config.businessName}. Posso te ajudar a escolher um horario? Responda AGENDAR para ver as opcoes.`,
-      7: `Ola ${nome}! Faz uma semana que conversamos. Ainda da tempo de agendar: responda AGENDAR e eu mostro os horarios livres.`,
-      15: `Ola ${nome}! Ultimo lembrete por aqui: se quiser marcar um horario com a ${this.config.businessName}, responda AGENDAR. Se preferir nao receber mais mensagens, responda SAIR.`,
-    };
-    return mensagens[reminder.offsetDays]
-      || `Ola ${nome}! Lembrete de ${plural(reminder.offsetDays)} da ${this.config.businessName}.`;
+    if (reminder.kind === 'retorno') return M.lembreteRetorno(this.clinic, contato, reminder.offsetDays);
+    if (reminder.kind === 'falta') return M.lembreteFalta(this.clinic, contato);
+    return M.lembreteFollowUp(this.clinic, contato, reminder.offsetDays);
   }
 
-  /** Envia os lembretes vencidos. Retorna quantos foram enviados. */
+  /** Um lembrete só sai se ainda fizer sentido para o paciente. */
+  aindaVale(reminder) {
+    const contato = this.store.getContact(reminder.contactId);
+    if (!contato || contato.optOut) return false;
+    if (reminder.kind === 'followup' && this.store.state.bookings.some(
+      (b) => b.contactId === contato.id && b.status === 'confirmado' && new Date(b.startsAt) >= new Date(),
+    )) return false; // já marcou nesse meio tempo
+    if (reminder.kind === 'booking' || reminder.kind === 'falta') {
+      const consulta = this.store.getBooking(reminder.bookingId);
+      if (!consulta) return false;
+      if (reminder.kind === 'booking' && consulta.status !== 'confirmado') return false;
+    }
+    return true;
+  }
+
+  /** Envia os lembretes vencidos. Devolve quantos saíram. */
   async tick(now = new Date()) {
-    const due = this.store.state.reminders.filter(
+    const vencidos = this.store.state.reminders.filter(
       (r) => r.status === 'pending' && new Date(r.dueAt).getTime() <= now.getTime(),
     );
-    let sent = 0;
-    for (const reminder of due) {
-      const contact = this.store.getContact(reminder.contactId);
-      if (!contact || contact.optOut) {
+    let enviados = 0;
+
+    for (const reminder of vencidos) {
+      if (!this.aindaVale(reminder)) {
         reminder.status = 'cancelado';
         continue;
       }
-      if (reminder.kind === 'booking') {
-        const booking = this.store.getBooking(reminder.bookingId);
-        if (!booking || booking.status !== 'confirmado') {
-          reminder.status = 'cancelado';
-          continue;
-        }
-      }
-      const text = this.buildText(reminder);
-      if (!text) {
+      const texto = this.textoDe(reminder);
+      if (!texto) {
         reminder.status = 'cancelado';
         continue;
       }
+      const contato = this.store.getContact(reminder.contactId);
       try {
-        await this.send(contact.phone, text);
+        await this.send(contato.phone, texto);
         reminder.status = 'enviado';
         reminder.sentAt = new Date().toISOString();
-        sent += 1;
-        this.store.logEvent(
-          'lembrete',
-          `Lembrete de ${plural(reminder.offsetDays)} enviado para ${contact.name || contact.phone}`,
-        );
+        enviados += 1;
+
+        // O lembrete de véspera abre a janela de confirmação de presença.
+        if (reminder.kind === 'booking' && reminder.offsetDays === 1) {
+          const consulta = this.store.getBooking(reminder.bookingId);
+          if (consulta && consulta.confirmation === 'aguardando') {
+            consulta.confirmation = 'pedido';
+            this.store.commit('booking', consulta);
+          }
+        }
+        this.store.logEvent('lembrete', `${this.rotulo(reminder)} enviado para ${contato.name || contato.phone}`);
       } catch (err) {
         reminder.status = 'erro';
         reminder.error = err.message;
         this.store.logEvent('erro', `Falha ao enviar lembrete: ${err.message}`);
       }
     }
-    if (due.length) this.store.commit('reminder', null);
-    return sent;
+    if (vencidos.length) this.store.commit('reminder', null);
+    return enviados;
+  }
+
+  rotulo(reminder) {
+    const dias = reminder.offsetDays === 1 ? '1 dia' : `${reminder.offsetDays} dias`;
+    if (reminder.kind === 'booking') return `Lembrete de consulta (${dias} antes)`;
+    if (reminder.kind === 'retorno') return `Lembrete de retorno (${dias})`;
+    if (reminder.kind === 'falta') return 'Mensagem de falta';
+    return `Follow-up de ${dias}`;
   }
 
   start() {

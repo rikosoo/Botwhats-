@@ -1,35 +1,81 @@
-# Botwhats — bot de WhatsApp com lembretes e agenda
+# Botwhats — autoatendimento humanizado de consultório no WhatsApp
 
-Bot de atendimento para WhatsApp que **responde a saudação**, envia **lembretes de 1, 7 e 15 dias**,
-tem uma **agenda própria de horários disponíveis** e um **painel web** onde dá para acompanhar todas
-as interações em tempo real.
+Assistente de WhatsApp para consultório médico: recebe o paciente com uma **saudação natural**,
+**agenda consultas** na agenda dos profissionais, envia **lembretes de 1, 7 e 15 dias**, pede
+**confirmação de presença** e mantém um **painel para a recepção** acompanhar tudo em tempo real.
 
-![painel](docs/painel.png)
+![painel da recepção](docs/painel.png)
 
-## O que ele faz
+## Por que "humanizado"
 
-| Recurso | Detalhe |
+O bot conversa como a recepção conversaria — não como uma URA.
+
+| Em vez de | O bot faz |
 | --- | --- |
-| Saudação automática | "Bom dia / Boa tarde / Boa noite" conforme o horário, com o nome do contato e o menu de opções |
-| Menu guiado | 1 Agendar · 2 Meus agendamentos · 3 Horários disponíveis · 4 Falar com atendente · 0 Encerrar |
-| Lembretes 1/7/15 | **Follow-up:** 1, 7 e 15 dias *depois* do contato, para quem ainda não agendou (o relógio reinicia a cada nova mensagem). **Agendamento:** 15, 7 e 1 dia *antes* do horário marcado |
-| Agenda | Horários de atendimento por dia da semana, duração configurável do slot, exceções por data, reserva e cancelamento |
-| Painel web | Conversas, bolhas de mensagem estilo WhatsApp, simulador, agenda clicável, fila de lembretes, linha do tempo de atividade e editor de horários |
-| Opt-out | Responder `SAIR` cancela todos os lembretes e marca o contato |
+| "DIGITE 1 PARA AGENDAR" | Entende *"queria marcar uma consulta"*, *"preciso de um retorno"*, *"tanto faz"*, *"às 10h"*. Os números são atalho da lista, não obrigação |
+| Repetir a mesma frase | Alterna variações de saudação e de resposta, e chama o paciente pelo primeiro nome |
+| Ignorar o contexto | Se perguntam o endereço no meio do agendamento, ele responde **e retoma de onde parou** |
+| Insistir quando não entende | Depois de três tentativas, passa para a secretária em vez de repetir o menu |
+| Mandar tudo de uma vez | Pausa entre mensagens proporcional ao tamanho do texto, como alguém digitando |
+| Chutar | *"8h"* com 08:00 e 08:20 livres vira *"tenho 08:00 e 08:20, qual delas?"* |
+
+## Segurança clínica — o que o bot **não** faz
+
+Isto é uma regra do código, não uma recomendação:
+
+- **Não avalia sintomas, não dá conduta, não interpreta exames.** Perguntas do tipo *"posso tomar
+  dipirona?"* recebem sempre a mesma resposta: isso é com o médico, na consulta.
+- **Triagem de sinais de alarme** (`src/core/triage.js`): dor no peito, falta de ar, desmaio,
+  sinais de AVC, sangramento intenso, ideação suicida e afins **interrompem qualquer fluxo**,
+  orientam *192 / pronto-socorro / CVV 188*, marcam o paciente como urgente no painel e chamam a equipe.
+- **Nada de dados de saúde por mensagem.** O aviso de privacidade (LGPD) vai uma vez, no primeiro
+  contato, e o bot só coleta o mínimo para o cadastro: nome, nascimento e convênio.
+- **Sem cobrança para quem está mal.** Paciente em urgência ou na fila da recepção não recebe
+  follow-up automático.
+- **`sair`** cancela todos os lembretes na hora.
+
+## Lembretes 1 / 7 / 15
+
+São duas frentes, configuráveis em `src/config.js`:
+
+| Frente | Quando dispara | Conteúdo |
+| --- | --- | --- |
+| **Follow-up** | 1, 7 e 15 dias **depois** do contato de quem não marcou (o relógio reinicia a cada mensagem) | Convite para agendar; o de 15 dias é o último e oferece opt-out |
+| **Antes da consulta** | 15, 7 e **1** dia **antes** | O de véspera manda endereço, o que levar, preparo do exame e **pede confirmação de presença** |
+| **Retorno** | Conforme `returnDays` do tipo de atendimento (padrão: 30 dias após a primeira consulta) | Convite para o retorno |
+| **Falta** | Dia seguinte a uma falta marcada no painel | Mensagem de reaproximação, sem cobrança |
+
+Um lembrete só sai se ainda fizer sentido: quem marcou no meio do caminho não recebe follow-up,
+e consulta cancelada não gera aviso.
+
+## Agenda
+
+- **Vários profissionais**, cada um com a própria grade semanal, duração de encaixe e exceções por data (férias, feriado).
+- **Tipos de atendimento** com durações diferentes (primeira consulta 40 min, retorno 20 min, exame 30 min) — a duração define a cadência dos horários e **bloqueia o intervalo inteiro**, não só o início.
+- *"Tanto faz"* escolhe automaticamente o profissional com a agenda mais próxima.
+- Fuso horário tratado de verdade (inclusive virada de horário de verão).
+
+## Painel da recepção
+
+- **Hoje**: agenda do dia por profissional, com botões *Confirmar*, *Compareceu*, *Faltou* e *Cancelar*.
+- **Fila e urgências**: pacientes que pediram atendente ou dispararam a triagem sobem para o topo, com selo vermelho.
+- **Conversas**: histórico em bolhas, ficha do paciente (nascimento, convênio, próxima consulta, status da confirmação), envio manual pela recepção e botão para devolver a conversa ao bot.
+- **Simulador**: testa o atendimento inteiro sem conectar o WhatsApp — inclusive o caminho da urgência.
+- **Lembretes**: fila do que vai sair, com *enviar agora* e *cancelar*.
+- **Ajustes**: dados do consultório, convênios, valores, o que levar e a agenda de cada profissional — tudo editável sem mexer no código.
 
 ## Como rodar
 
 ```bash
 npm install
 cp .env.example .env
-npm run seed     # opcional: cria conversas de exemplo
+npm run seed     # opcional: popula com um dia típico de consultório
 npm start        # painel em http://localhost:3000
 ```
 
-Por padrão o `CHANNEL=mock`: nada é enviado para o WhatsApp de verdade e você testa o fluxo
-inteiro pelo simulador do painel (campo de mensagem + botões de atalho `Oi`, `1`, `AGENDAR`, `SIM`…).
+Com `CHANNEL=mock` (padrão) nada é enviado de verdade: você conversa com o bot pelo simulador do painel.
 
-### Conectando no WhatsApp de verdade
+### Conectando no WhatsApp
 
 ```bash
 npm install whatsapp-web.js qrcode-terminal   # dependências opcionais
@@ -37,13 +83,23 @@ npm install whatsapp-web.js qrcode-terminal   # dependências opcionais
 npm start
 ```
 
-Um QR Code aparece no terminal — leia com **WhatsApp › Aparelhos conectados**. A sessão fica salva
-em `.wwebjs_auth/`, então não é preciso ler o QR toda vez.
+Leia o QR Code do terminal em **WhatsApp › Aparelhos conectados**. A sessão fica salva em `.wwebjs_auth/`.
 
-> `whatsapp-web.js` automatiza o WhatsApp Web e **não é uma API oficial**. Para uso comercial em
-> escala, o caminho suportado é a **WhatsApp Cloud API** da Meta. Trocar de canal é simples: basta
-> criar um adaptador em `src/channels/` com os métodos `start()`, `sendText(phone, texto)` e o
-> callback `onMessage({ phone, name, body })` — o resto do bot não muda.
+> `whatsapp-web.js` automatiza o WhatsApp Web e **não é API oficial**. Para uso comercial em escala,
+> o caminho suportado é a **WhatsApp Cloud API** da Meta. Trocar é simples: crie um adaptador em
+> `src/channels/` com `start()`, `sendText(phone, texto)` e o callback `onMessage({ phone, name, body })`.
+
+## Personalizando para o seu consultório
+
+Quase tudo está em dois arquivos:
+
+- **`src/clinic.js`** — nome, especialidade, nome da assistente, endereço, telefone, convênios,
+  valores, o que levar, profissionais (com agenda), tipos de atendimento (com duração, preparo e
+  prazo de retorno) e políticas (antecedência, tolerância, aviso de privacidade).
+- **`src/core/messages.js`** — **todo** o texto que o paciente lê. Quer outro tom, mais formal ou
+  mais próximo? Edite aqui; a lógica não muda.
+
+Os dados do consultório e as agendas também podem ser editados pela aba **Ajustes** do painel.
 
 ## Configuração (`.env`)
 
@@ -51,63 +107,53 @@ em `.wwebjs_auth/`, então não é preciso ler o QR toda vez.
 | --- | --- | --- |
 | `CHANNEL` | `mock` | `mock` (simulador) ou `whatsapp` (QR Code) |
 | `PORT` | `3000` | Porta do painel |
-| `TZ` | `America/Sao_Paulo` | Fuso usado na agenda e nos lembretes |
-| `BUSINESS_NAME` | `Minha Empresa` | Nome exibido nas mensagens |
-| `SCHEDULER_INTERVAL_MS` | `30000` | De quanto em quanto tempo os lembretes vencidos são enviados |
+| `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
+| `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
+| `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
 | `CHROMIUM_PATH` | — | Caminho do Chromium, se o Puppeteer não achar sozinho |
-
-Os intervalos dos lembretes ficam em `src/config.js` (`followUpOffsets` e `bookingOffsets`) — mude
-para `[3, 10, 30]`, por exemplo, se precisar de outra cadência.
-
-## Horários disponíveis
-
-Configure na aba **Horários** do painel (faixas por dia da semana, ex.: `09:00-12:00, 14:00-18:00`,
-e a duração de cada atendimento). Deixe o campo vazio para fechar o dia.
-
-Para fechar ou abrir uma data específica (feriado, plantão), use as *exceções*:
-
-```bash
-curl -X PUT localhost:3000/api/availability -H 'content-type: application/json' \
-  -d '{"exceptions": {"2026-12-25": [], "2026-12-26": [{"start":"09:00","end":"12:00"}]}}'
-```
 
 ## API
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
-| `GET` | `/api/state` | Snapshot completo usado pelo painel |
-| `GET` | `/api/stream` | Server-Sent Events: atualiza o painel em tempo real |
-| `POST` | `/api/simulate` | Injeta uma mensagem do cliente (`{phone, name, body}`) |
-| `POST` | `/api/messages` | Envia mensagem manual do atendente (`{contactId, body}`) |
-| `GET` | `/api/slots?date=YYYY-MM-DD` | Horários livres da data |
-| `GET`/`PUT` | `/api/availability` | Lê/atualiza os horários de atendimento |
-| `POST` | `/api/bookings` | Cria agendamento (`{contactId, date, start}`) |
-| `DELETE` | `/api/bookings/:id` | Cancela agendamento e seus lembretes |
-| `POST` | `/api/reminders/:id/send` | Antecipa o envio de um lembrete |
+| `GET` | `/api/state` | Snapshot completo do painel |
+| `GET` | `/api/stream` | Server-Sent Events: atualização em tempo real |
+| `POST` | `/api/simulate` | Injeta mensagem do paciente (`{phone, name, body}`) |
+| `POST` | `/api/messages` | Mensagem manual da recepção (`{contactId, body}`) |
+| `PATCH` | `/api/contacts/:id` | Edita cadastro (nome, nascimento, convênio, prioridade) |
+| `POST` | `/api/contacts/:id/release` | Devolve a conversa ao atendimento automático |
+| `POST` | `/api/contacts/:id/followups` | Reprograma os lembretes de 1/7/15 dias |
+| `GET` | `/api/slots?date=&professionalId=&serviceId=` | Horários livres |
+| `GET` | `/api/day?date=` | Agenda do dia por profissional |
+| `POST` | `/api/bookings` | Cria consulta |
+| `POST` | `/api/bookings/:id/status` | Confirmação de presença e comparecimento/falta |
+| `DELETE` | `/api/bookings/:id` | Cancela consulta e seus lembretes |
+| `POST` | `/api/reminders/:id/send` | Antecipa um lembrete |
 | `DELETE` | `/api/reminders/:id` | Cancela um lembrete |
-| `POST` | `/api/contacts/:id/followups` | Reagenda os lembretes de 1/7/15 dias |
+| `GET`/`PUT` | `/api/clinic` | Dados do consultório |
+| `PUT` | `/api/professionals/:id` | Agenda e dados de um profissional |
 | `GET` | `/api/health` | Status do canal e contadores |
 
 ## Estrutura
 
 ```
 src/
-  index.js            entrada: sobe painel, canal e agendador
+  index.js            entrada: painel, canal e agendador de lembretes
   app.js              liga armazenamento, agenda, lembretes, bot e canal
-  config.js           .env + parâmetros dos lembretes
-  server.js           API REST + SSE + arquivos do painel
-  core/bot.js         conversa: saudação, menu, agendamento, cancelamento
-  core/agenda.js      fuso horário, geração de horários, reservas
-  core/reminders.js   agendador dos lembretes de 1/7/15 dias
-  channels/mock.js    canal de simulação
-  channels/whatsappWeb.js  canal real (QR Code)
+  clinic.js           dados do consultório (médicos, serviços, convênios, políticas)
+  config.js           .env + janelas dos lembretes
+  server.js           API REST + SSE + painel
+  core/bot.js         roteamento da conversa e fluxo de agendamento
+  core/messages.js    todo o texto que o paciente lê
+  core/nlu.js         intenções, números, horários, datas em português
+  core/triage.js      sinais de alarme
+  core/agenda.js      fuso, grade de horários, reservas por profissional
+  core/reminders.js   follow-up, pré-consulta, retorno e falta
+  channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
-public/               painel web (HTML + CSS + JS puros)
-test/                 testes com node:test
+public/               painel da recepção (HTML + CSS + JS puros)
+test/                 39 testes com node:test
 ```
-
-Os dados ficam em `data/db.json` — arquivo único, sem banco para instalar. Para produção com
-volume maior, `src/db/store.js` é o único arquivo a trocar por Postgres/SQLite.
 
 ## Testes
 
@@ -115,5 +161,16 @@ volume maior, `src/db/store.js` é o único arquivo a trocar por Postgres/SQLite
 npm test
 ```
 
-Cobrem a conversão de fuso horário, a geração e reserva de horários, as três janelas de lembrete
-(incluindo opt-out e agendamento cancelado) e o fluxo completo de agendamento pelo menu.
+Cobrem a triagem de urgência, o entendimento de linguagem natural, a grade de horários por
+profissional e duração, as quatro famílias de lembrete e a conversa inteira de agendamento,
+remarcação, cancelamento e handoff.
+
+## Avisos
+
+- Esta é uma ferramenta de **secretariado**, não um dispositivo médico. Ela não faz triagem clínica,
+  não classifica risco e não substitui avaliação profissional.
+- Antes de usar com pacientes reais, revise os textos de `src/core/messages.js` com o médico
+  responsável, confirme as regras do seu conselho profissional sobre comunicação e publicidade, e
+  registre a base legal do tratamento de dados (LGPD) para os telefones e cadastros armazenados.
+- Os dados ficam em `data/db.json`, sem criptografia. Para uso real, coloque o serviço atrás de
+  autenticação, restrinja o acesso ao painel e faça backup do arquivo.
