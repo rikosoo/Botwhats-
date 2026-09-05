@@ -275,6 +275,9 @@ a recepção — e o cálculo da taxa de falta, incluindo o caso em que a presen
 
 ## Próximos passos
 
+O que ainda falta para rodar num número de verdade — login no painel, tratamento de áudio e
+imagem, lista de espera para encaixe — está listado no fim de [`docs/roadmap.md`](docs/roadmap.md).
+
 Quatro itens do backlog já entraram: confirmação que mostra o horário reservado, toque no meio da
 espera, check-in do dia seguinte e taxa de falta no painel. O que falta — régua de follow-up com
 propósito por toque, escassez calculada da agenda, resposta completa de preço com dois horários e

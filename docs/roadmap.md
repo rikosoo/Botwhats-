@@ -178,3 +178,57 @@ Quem recebe informação útil antes chega sentindo que a consulta já começou.
 
 **Por que vale.** É o buraco mais comum da agenda: a consulta marcada com folga é justamente a que
 some. O código já guarda `createdAt` e `startsAt` — falta usar os dois juntos.
+
+---
+
+# O que ainda falta para uso real
+
+Levantamento do que um consultório sentiria falta hoje, em ordem de urgência.
+Os três primeiros são o que eu resolveria antes de ligar isso num número de verdade.
+
+## A. Login no painel  ⚠️ bloqueador
+
+Hoje qualquer pessoa que alcance a porta do servidor abre o painel e vê nome, telefone, data de
+nascimento, convênio e conversa de todos os pacientes. Sem autenticação, isso não pode ficar
+exposto na internet. Mínimo: login com senha, sessão, HTTPS e o `data/db.json` fora do alcance
+público. Depois: um usuário por pessoa da equipe, para saber quem respondeu o quê.
+
+## B. Áudio e imagem  ⚠️ buraco silencioso
+
+`src/channels/whatsappWeb.js` ignora tudo que não é texto (`msg.type !== 'chat'`). Na prática, o
+paciente manda um áudio — que é o jeito mais comum de responder no WhatsApp — e **não recebe
+resposta nenhuma**. O mínimo é responder ("não consigo ouvir áudio por aqui, pode escrever? já
+avisei a recepção") e jogar a conversa para a fila humana. Foto de carteirinha e de pedido médico
+seguem o mesmo caminho, com o cuidado de não guardar imagem clínica.
+
+## C. Lista de espera e encaixe
+
+Fecha o ciclo que o "não vem" e o cancelamento abriram: quando um horário volta para a agenda,
+oferecer automaticamente para quem está esperando — em ordem, com prazo para responder antes de
+passar para o próximo. É o recurso que transforma falta em consulta, e todo o dado necessário já
+existe.
+
+## D. Integração com a agenda que o consultório já usa
+
+Google Calendar ou o sistema de prontuário (iClinic, Feegow, Doctoralia e afins). Sem isso a
+secretária digita tudo duas vezes e as duas agendas divergem — que é o jeito mais rápido de o
+consultório abandonar a ferramenta.
+
+## E. Sinal ou pagamento antecipado
+
+Link de Pix na confirmação da primeira consulta. É a medida com efeito mais direto sobre falta em
+consultório particular. Exige tratar reembolso e cancelamento com regra clara.
+
+## F. LGPD na prática
+
+Apagar os dados de um paciente a pedido dele, política de retenção (o histórico não precisa ficar
+para sempre), registro de consentimento e backup do banco. Hoje o `db.json` não tem nada disso.
+
+## G. Recall por procedimento
+
+Retorno anual, revisão de exame, acompanhamento periódico — um recall com prazo próprio por tipo
+de atendimento, além do retorno de 30 dias que já existe.
+
+## H. Mais de uma unidade
+
+Endereços diferentes, com o profissional atendendo em cada um em dias distintos.
