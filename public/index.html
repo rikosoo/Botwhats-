@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Painel do Bot · WhatsApp</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">💬</span>
+      <div>
+        <h1 id="businessName">Painel do Bot</h1>
+        <p class="sub">Atendimento, lembretes e agenda em um lugar só</p>
+      </div>
+    </div>
+    <div class="status" id="channelStatus">
+      <span class="dot"></span><span class="label">carregando…</span>
+    </div>
+  </header>
+
+  <section class="kpis" id="kpis"></section>
+
+  <main class="grid">
+    <!-- Conversas -->
+    <section class="card contacts">
+      <div class="card-head">
+        <h2>Conversas</h2>
+        <div class="head-actions">
+          <input id="searchContacts" type="search" placeholder="Buscar…" />
+          <button id="btnNewContact" class="ghost" title="Criar contato de teste">+ Novo</button>
+        </div>
+      </div>
+      <ul id="contactList" class="contact-list"></ul>
+    </section>
+
+    <!-- Chat -->
+    <section class="card chat">
+      <div class="card-head chat-head">
+        <div>
+          <h2 id="chatName">Selecione uma conversa</h2>
+          <p class="sub" id="chatMeta">O simulador permite testar o bot sem conectar o WhatsApp</p>
+        </div>
+        <div class="chat-actions">
+          <button id="btnFollowups" class="ghost" title="Reagendar lembretes de 1/7/15 dias">↻ Lembretes</button>
+        </div>
+      </div>
+      <div id="messages" class="messages"></div>
+      <form id="composer" class="composer">
+        <select id="sendAs" aria-label="Enviar como">
+          <option value="in">Cliente (simulador)</option>
+          <option value="out">Atendente</option>
+        </select>
+        <input id="composerInput" type="text" placeholder="Digite uma mensagem…" autocomplete="off" />
+        <button type="submit">Enviar</button>
+      </form>
+      <div class="quick" id="quickReplies"></div>
+    </section>
+
+    <!-- Painel lateral -->
+    <section class="card side">
+      <div class="tabs" role="tablist">
+        <button class="tab active" data-tab="agenda">Agenda</button>
+        <button class="tab" data-tab="lembretes">Lembretes</button>
+        <button class="tab" data-tab="atividade">Atividade</button>
+        <button class="tab" data-tab="horarios">Horários</button>
+      </div>
+      <div class="tab-panel active" id="tab-agenda"></div>
+      <div class="tab-panel" id="tab-lembretes"></div>
+      <div class="tab-panel" id="tab-atividade"></div>
+      <div class="tab-panel" id="tab-horarios"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

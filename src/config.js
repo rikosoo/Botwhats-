@@ -1,0 +1,37 @@
+'use strict';
+
+const path = require('path');
+
+function loadDotEnv() {
+  const fs = require('fs');
+  const file = path.join(__dirname, '..', '.env');
+  if (!fs.existsSync(file)) return;
+  for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim().replace(/^["']|["']$/g, '');
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
+loadDotEnv();
+
+const config = {
+  channel: process.env.CHANNEL || 'mock',
+  port: Number(process.env.PORT || 3000),
+  timezone: process.env.TZ || 'America/Sao_Paulo',
+  businessName: process.env.BUSINESS_NAME || 'Minha Empresa',
+  schedulerIntervalMs: Number(process.env.SCHEDULER_INTERVAL_MS || 30000),
+  chromiumPath: process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,
+  dataFile: process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json'),
+
+  // Lembretes de follow-up: dias apos o ultimo contato de um lead que nao agendou.
+  followUpOffsets: [1, 7, 15],
+  // Lembretes de agendamento: dias antes do horario marcado.
+  bookingOffsets: [15, 7, 1],
+};
+
+module.exports = config;
