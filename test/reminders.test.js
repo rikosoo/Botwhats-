@@ -45,42 +45,44 @@ test('cada novo contato reinicia o ciclo de follow-up', () => {
 
 test('lembretes da consulta pulam as janelas que já passaram', () => {
   const app = makeApp();
-  const { booking } = marcarConsulta(app, '5511933333333', 'Edu Lima', 8);
+  const { booking } = marcarConsulta(app, '5511933333333', 'Edu Lima', 5);
   const criados = app.reminders.scheduleBookingReminders(booking);
 
-  // Faltando 8 dias cabem os toques de 7 e 1 dia — o de 15 já passou.
+  // Faltando 5 dias cabem os toques de 3 dias e da véspera — o de 7 já passou.
   const antes = criados.filter((r) => r.kind === 'booking');
-  assert.deepStrictEqual(antes.map((r) => r.offsetDays), [7, 1]);
+  assert.deepStrictEqual(antes.map((r) => r.offsetDays), [3, 1]);
 });
 
-test('consulta marcada com folga ganha um toque no meio da espera', () => {
+test('consulta marcada com muita antecedência ganha um toque no meio do silêncio', () => {
   const app = makeApp();
-  const { booking } = marcarConsulta(app, '5511933333334', 'Nara Dias', 8);
+  const { booking } = marcarConsulta(app, '5511933333334', 'Nara Dias', 30);
   const criados = app.reminders.scheduleBookingReminders(booking);
 
   const espera = criados.find((r) => r.kind === 'espera');
-  assert.ok(espera, 'toque do meio da espera criado');
-  const meio = Date.now() + 4 * DAY_MS;
-  assert.ok(Math.abs(new Date(espera.dueAt).getTime() - meio) < 6 * 3600000, 'cai no meio do caminho');
+  assert.ok(espera, 'toque criado');
+  // Silêncio de 23 dias até o lembrete de 7 dias antes: o toque cai na metade.
+  const meio = Date.now() + 11.5 * DAY_MS;
+  assert.ok(Math.abs(new Date(espera.dueAt).getTime() - meio) < 12 * 3600000, 'cai no meio do silêncio');
 });
 
-test('consulta marcada em cima da hora não ganha o toque do meio', () => {
+test('com a régua de 7 e 3 dias, marcação de dez dias não ganha toque extra', () => {
   const app = makeApp();
-  const { booking } = marcarConsulta(app, '5511933333335', 'Otto Reis', 2);
+  const { booking } = marcarConsulta(app, '5511933333335', 'Otto Reis', 10);
   const criados = app.reminders.scheduleBookingReminders(booking);
-  assert.strictEqual(criados.filter((r) => r.kind === 'espera').length, 0);
+  assert.strictEqual(criados.filter((r) => r.kind === 'espera').length, 0,
+    'o lembrete de 7 dias antes já quebra o silêncio');
 });
 
 test('o toque do meio da espera oferece utilidade, não cobrança', async () => {
   const app = makeApp();
-  const { booking } = marcarConsulta(app, '5511933333336', 'Paula Nunes', 10);
+  const { booking } = marcarConsulta(app, '5511933333336', 'Paula Nunes', 30);
   app.reminders.scheduleBookingReminders(booking);
 
-  await app.reminders.tick(new Date(Date.now() + 6 * DAY_MS));
+  await app.reminders.tick(new Date(Date.now() + 12 * DAY_MS));
   const texto = app.textoEnviado();
   assert.match(texto, /exames recentes/i);
   assert.match(texto, /adianta o plano de tratamento/i);
-  assert.doesNotMatch(texto, /Está tudo certo para você\?/);
+  assert.doesNotMatch(texto, /Faltam \d+ dias/i);
 });
 
 test('véspera mostra o tempo reservado e abre a porta de saída', async () => {
@@ -176,4 +178,36 @@ test('o texto do follow-up muda conforme a janela', () => {
   assert.match(app.reminders.textoDe(um), /Ontem você falou/);
   assert.match(app.reminders.textoDe(sete), /uma semana|ainda quer marcar/i);
   assert.match(app.reminders.textoDe(quinze), /último lembrete/i);
+});
+
+test('a régua antes da consulta é 7 e 3 dias, mais a véspera', () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511933333340', 'Ivo Nunes', 12);
+  const criados = app.reminders.scheduleBookingReminders(booking);
+
+  assert.deepStrictEqual(
+    criados.filter((r) => r.kind === 'booking').map((r) => r.offsetDays),
+    [7, 3, 1],
+  );
+});
+
+test('nenhum lembrete antes da consulta faz contagem regressiva', async () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511933333341', 'Julia Costa', 9);
+  app.reminders.scheduleBookingReminders(booking);
+
+  await app.reminders.tick(new Date(Date.now() + 7 * DAY_MS));
+  const texto = app.textoEnviado();
+  assert.ok(texto.length > 0, 'algum lembrete saiu');
+  assert.doesNotMatch(texto, /Faltam \d+ dias/i);
+});
+
+test('véspera pede um sim ou não simples', async () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511933333342', 'Lino Prado', 1.5);
+  app.reminders.scheduleBookingReminders(booking);
+
+  await app.reminders.tick(new Date(Date.now() + DAY_MS));
+  assert.match(app.ultima(), /Responda \*sim\* ou \*não\*/);
+  assert.match(app.ultima(), /reservou 40 minutos só para você/);
 });

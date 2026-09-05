@@ -68,6 +68,14 @@ class Bot {
 
     // 3. Se há um agendamento em curso, o passo atual tenta entender primeiro:
     //    "unimed" no meio do fluxo é a resposta da pergunta, não uma dúvida solta.
+    if (passo === 'oferta' && !['cancelar', 'remarcar', 'minhas_consultas', 'ajuda', 'atendente'].includes(intencao)) {
+      const resposta = this.tratarOferta(contato, body, intencao);
+      if (resposta) {
+        this.limparErros(contato);
+        return resposta;
+      }
+    }
+
     if (passo.startsWith('agendar_') && !['cancelar', 'remarcar', 'minhas_consultas', 'ajuda'].includes(intencao)) {
       const resposta = this.tratarPassoDoFluxo(contato, body, intencao, passo);
       if (resposta) {
@@ -80,10 +88,19 @@ class Bot {
     if (intencao === 'cancelar') return this.cancelar(contato);
     if (intencao === 'remarcar') return this.remarcar(contato);
     if (intencao === 'confirmar_presenca') return this.confirmarPresenca(contato);
+
+    // "sim" / "não" logo depois do lembrete de véspera são resposta de
+    // presença — não pedido de novo agendamento.
+    if (['sim', 'nao'].includes(intencao) && contato.state.step === 'conversa') {
+      const pendente = this.consultaAguardandoResposta(contato);
+      if (pendente) {
+        return intencao === 'sim' ? this.confirmarPresenca(contato) : this.recusarPresenca(contato, pendente);
+      }
+    }
     if (intencao === 'minhas_consultas') return this.minhasConsultas(contato);
     if (intencao === 'endereco') return this.comAjudaExtra(contato, M.endereco(this.clinic));
     if (intencao === 'convenios') return this.comAjudaExtra(contato, M.convenios(this.clinic));
-    if (intencao === 'valores') return this.comAjudaExtra(contato, M.valores(this.clinic));
+    if (intencao === 'valores') return this.responderValor(contato, body);
     if (intencao === 'documentos') return this.comAjudaExtra(contato, M.documentos(this.clinic));
     if (intencao === 'preparo') return this.comAjudaExtra(contato, M.preparo(this.clinic));
     if (intencao === 'agendar') return this.iniciarAgendamento(contato, {}, body);
@@ -247,6 +264,25 @@ class Bot {
     return [M.minhasConsultas(consultas, this.agenda.today())];
   }
 
+  /** Consulta futura que ainda espera um sim ou não do paciente. */
+  consultaAguardandoResposta(contato) {
+    const consulta = this.agenda.nextBookingOf(contato.id);
+    return consulta && consulta.confirmation !== 'confirmado' ? consulta : null;
+  }
+
+  /** "Não vou poder ir": libera cedo é melhor que falta no dia. */
+  recusarPresenca(contato, consulta) {
+    consulta.confirmation = 'recusado';
+    this.store.commit('booking', consulta);
+    this.store.logEvent(
+      'confirmacao',
+      `⚠️ ${contato.name || contato.phone} avisou que não vem em ${formatDateBr(consulta.date)} às ${consulta.start}`,
+    );
+    contato.state = { step: 'conversa', data: {} };
+    return ['Obrigada por avisar! 🙏 Isso ajuda muito — consigo oferecer o horário para outra pessoa.\n\n'
+      + 'Quer que eu procure outra data para você, ou prefere cancelar por enquanto?'];
+  }
+
   confirmarPresenca(contato) {
     const consulta = this.agenda.nextBookingOf(contato.id);
     if (!consulta) return this.iniciarAgendamento(contato);
@@ -359,6 +395,77 @@ class Bot {
     return null;
   }
 
+  /**
+   * Pergunta de preço. Responde o pacote inteiro e termina em dois horários
+   * concretos — quem recebe só o número compara preço e some.
+   */
+  responderValor(contato, body) {
+    this.limparErros(contato);
+    const servico = this.inferirServico(body) || findService(this.clinic, contato.state.data.serviceId);
+    const resposta = [M.valores(this.clinic, servico)];
+
+    // Se já está agendando, não atropela o passo em que a pessoa estava.
+    if (contato.state.step.startsWith('agendar_')) {
+      resposta.push(`Voltando ao agendamento: ${this.perguntaAtual(contato)}`);
+      return resposta;
+    }
+
+    const { professionalId, dias } = this.buscarDias({ serviceId: servico.id }, 2);
+    // Um horário por dia: duas opções em dias diferentes ajudam mais a decidir
+    // do que dois horários colados na mesma manhã.
+    const slots = dias.map((d) => d.slots[0]).filter(Boolean);
+    if (slots.length < 2 && dias[0] && dias[0].slots[1]) slots.push(dias[0].slots[1]);
+    const oferta = M.ofertaDeHorarios(slots, this.agenda.today());
+    if (!oferta) {
+      contato.state = { step: 'conversa', data: {} };
+      return resposta;
+    }
+
+    resposta.push(oferta);
+    contato.state = {
+      step: 'oferta',
+      data: {
+        serviceId: servico.id,
+        professionalId,
+        opcoes: slots.map((s) => ({ date: s.date, start: s.start, professionalId: s.professionalId })),
+      },
+    };
+    return resposta;
+  }
+
+  /** Resposta aos dois horários oferecidos junto com o valor. */
+  tratarOferta(contato, body, intencao) {
+    const opcoes = contato.state.data.opcoes || [];
+    const numero = nlu.lerNumero(body, opcoes.length);
+    let escolhida = numero ? opcoes[numero - 1] : null;
+    if (!escolhida) {
+      const horario = nlu.lerHorario(body, opcoes.map((o) => o.start));
+      escolhida = opcoes.find((o) => o.start === horario) || null;
+    }
+
+    if (escolhida) {
+      contato.state.data.date = escolhida.date;
+      contato.state.data.start = escolhida.start;
+      contato.state.data.professionalId = escolhida.professionalId;
+      if (!contato.name) {
+        contato.state.step = 'agendar_nome';
+        return [M.pedirNome()];
+      }
+      if (!contato.birthDate) {
+        contato.state.step = 'agendar_nascimento';
+        return [M.pedirNascimento(contato.name)];
+      }
+      return this.mostrarResumo(contato);
+    }
+
+    // Não serviu nenhum dos dois: volta para a escolha normal de dia.
+    if (intencao === 'nao' || /outro|outra data|nenhum|nao da|nao posso/.test(nlu.normalizar(body))) {
+      return this.iniciarAgendamento(contato, { serviceId: contato.state.data.serviceId });
+    }
+    if (intencao === 'sim') return this.iniciarAgendamento(contato, { serviceId: contato.state.data.serviceId });
+    return null;
+  }
+
   perguntarProfissional(contato) {
     this.limparErros(contato);
     const disponiveis = this.agenda.professionalsFor(contato.state.data.serviceId);
@@ -393,8 +500,7 @@ class Bot {
   }
 
   /** Opções de agendamento para o serviço/profissional escolhidos. */
-  buscarDias(contato, limite = 4) {
-    const { serviceId, professionalId } = contato.state.data;
+  buscarDias({ serviceId, professionalId }, limite = 4) {
     if (professionalId) {
       return { professionalId, dias: this.agenda.nextAvailableDays(limite, { professionalId, serviceId }) };
     }
@@ -409,7 +515,7 @@ class Bot {
   }
 
   perguntarDia(contato) {
-    const { professionalId, dias } = this.buscarDias(contato);
+    const { professionalId, dias } = this.buscarDias(contato.state.data);
     if (!dias.length) {
       contato.state = { step: 'conversa', data: {} };
       this.store.logEvent('agenda', `Sem horários para ${contato.name || contato.phone}`);

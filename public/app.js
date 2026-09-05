@@ -66,6 +66,14 @@ function formatBody(body) {
     .replace(/\n/g, '<br>');
 }
 
+/** Como a confirmação do paciente aparece na agenda da recepção. */
+function selo(booking) {
+  if (!booking) return { classe: '', texto: '—' };
+  if (booking.confirmation === 'confirmado') return { classe: 'confirmado', texto: 'confirmado' };
+  if (booking.confirmation === 'recusado') return { classe: 'urgente', texto: 'não vem' };
+  return { classe: 'aguardando', texto: 'a confirmar' };
+}
+
 const pacientePorId = (id) => (state.data.contacts || []).find((c) => c.id === id) || null;
 const nomePaciente = (c) => (c ? c.name || c.phone : 'Paciente');
 
@@ -106,9 +114,9 @@ function renderKpis() {
   const d = state.data;
   const hojeConsultas = d.bookings.filter((b) => b.date === d.hoje && b.status === 'confirmado');
   const pendentes = d.reminders.filter((r) => r.status === 'pending');
-  const aguardando = d.bookings.filter(
-    (b) => b.status === 'confirmado' && b.confirmation !== 'confirmado' && new Date(b.startsAt) >= new Date(),
-  );
+  const futuras = d.bookings.filter((b) => b.status === 'confirmado' && new Date(b.startsAt) >= new Date());
+  const aguardando = futuras.filter((b) => b.confirmation === 'aguardando' || b.confirmation === 'pedido');
+  const recusadas = futuras.filter((b) => b.confirmation === 'recusado');
   const urgentes = d.contacts.filter((c) => c.priority === 'urgente');
   const humanos = d.contacts.filter((c) => c.stage === 'atendimento humano');
 
@@ -118,6 +126,7 @@ function renderKpis() {
     ['Taxa de falta (30d)', falta && falta.registradas ? `${falta.taxaFalta}%` : '—',
       falta && falta.taxaFalta >= 20 ? 'danger' : falta && falta.taxaFalta >= 10 ? 'warn' : ''],
     ['Aguardando confirmação', aguardando.length, aguardando.length ? 'warn' : ''],
+    ['Avisaram que não vêm', recusadas.length, recusadas.length ? 'danger' : ''],
     ['Na fila da recepção', humanos.length, humanos.length ? 'warn' : ''],
     ['Urgências', urgentes.length, urgentes.length ? 'danger' : ''],
     ['Pacientes', d.contacts.length, ''],
@@ -254,7 +263,7 @@ function renderChat() {
     ['Próxima consulta', paciente.nextBooking
       ? `${fmtDia(paciente.nextBooking.startsAt)} ${paciente.nextBooking.start} · ${paciente.nextBooking.serviceName}`
       : '—'],
-    ['Confirmação', paciente.nextBooking ? paciente.nextBooking.confirmation : '—'],
+    ['Confirmação', selo(paciente.nextBooking).texto],
   ];
   for (const [label, valor] of dados) {
     const item = el('span');
@@ -285,9 +294,10 @@ function renderChat() {
 }
 
 const ATALHOS = [
-  'Oi', 'Quero marcar uma consulta', 'É primeira consulta', 'Unimed', 'Particular',
-  'Tanto faz', 'Sim', 'Confirmo', 'Preciso remarcar', 'Vocês atendem meu plano?',
-  'Onde fica?', 'Quero falar com a secretária', 'Estou com dor no peito',
+  'Oi', 'Quanto custa a consulta?', 'Quero marcar uma consulta', 'É primeira consulta',
+  'Unimed', 'Particular', 'Tanto faz', 'Sim', 'Não', 'Preciso remarcar',
+  'Vocês atendem meu plano?', 'Onde fica?', 'Quero falar com a secretária',
+  'Estou com dor no peito',
 ];
 
 function renderQuickReplies() {
@@ -324,8 +334,8 @@ function renderHoje() {
 
       const linha = el('div', 'row');
       linha.append(el('span', 'hour', b.start));
-      linha.append(el('span', 'badge ' + (b.confirmation === 'confirmado' ? 'confirmado' : 'aguardando'),
-        b.confirmation === 'confirmado' ? 'confirmado' : 'a confirmar'));
+      const marca = selo(b);
+      linha.append(el('span', `badge ${marca.classe}`, marca.texto));
       item.append(linha);
       item.append(el('div', 'who', `${nomePaciente(paciente)} · ${b.serviceName} · ${b.insurance || 'Particular'}`));
 
@@ -380,8 +390,8 @@ function renderAgenda() {
     const item = el('div', 'item');
     const row = el('div', 'row');
     row.append(el('span', 'title', `${fmtDia(b.startsAt)} · ${b.start}`));
-    row.append(el('span', 'badge ' + (b.confirmation === 'confirmado' ? 'confirmado' : 'aguardando'),
-      b.confirmation === 'confirmado' ? 'ok' : 'a confirmar'));
+    const marca = selo(b);
+    row.append(el('span', `badge ${marca.classe}`, marca.texto));
     item.append(row);
     item.append(el('div', 'desc',
       `${nomePaciente(pacientePorId(b.contactId))} · ${b.serviceName} · ${b.professionalName}`));

@@ -192,7 +192,7 @@ test('responde dúvidas frequentes sem precisar de menu', async () => {
   assert.match(app.ultima(), /Unimed/);
 
   await app.handleIncoming({ phone, body: 'quanto custa particular?' });
-  assert.match(app.ultima(), /R\$ 400/);
+  assert.match(app.textoEnviado(), /R\$ 400/);
 
   await app.handleIncoming({ phone, body: 'preciso de jejum?' });
   assert.match(app.ultima(), /jejum/i);
@@ -244,4 +244,68 @@ test('quem ainda não foi atendido recebe a orientação padrão', async () => {
   await app.conversa(phone, ['oi', 'posso tomar dipirona antes?']);
   assert.match(app.ultima(), /pergunta para o médico avaliar/i);
   assert.strictEqual(app.store.findContactByPhone(phone).stage, 'ativo');
+});
+
+test('preço vem com o pacote inteiro e termina em dois horários concretos', async () => {
+  const app = makeApp();
+  const phone = '5511900017777';
+  await app.conversa(phone, ['oi', 'quanto custa a consulta?']);
+
+  const resposta = app.sent.slice(-2).map((m) => m.text).join('\n');
+  assert.match(resposta, /R\$ 400,00/, 'diz o valor');
+  assert.match(resposta, /40 minutos/, 'diz a duração');
+  assert.match(resposta, /retorno em ate 30 dias/i, 'diz que o retorno está incluso');
+  assert.match(resposta, /Pix/, 'diz as formas de pagamento');
+  assert.match(resposta, /\*1\.\*.+\n\*2\.\*/, 'oferece dois horários específicos');
+  assert.doesNotMatch(resposta, /temos vaga essa semana/i);
+
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.state.step, 'oferta');
+  assert.strictEqual(paciente.state.data.opcoes.length, 2);
+});
+
+test('aceitar um dos horários oferecidos leva direto ao cadastro', async () => {
+  const app = makeApp();
+  const phone = '5511900018888';
+  await app.conversa(phone, ['oi', 'qual o valor?', 'pode ser o segundo', 'Joana Prado Lima', '10/10/1980', 'sim']);
+
+  const consulta = app.store.state.bookings[0];
+  assert.ok(consulta, 'consulta criada a partir da conversa de preço');
+  assert.strictEqual(consulta.serviceId, 'primeira-consulta');
+  assert.strictEqual(app.store.findContactByPhone(phone).name, 'Joana Prado Lima');
+});
+
+test('recusar os dois horários volta para a escolha normal de dia', async () => {
+  const app = makeApp();
+  const phone = '5511900019999';
+  await app.conversa(phone, ['oi', 'quanto custa?', 'nenhum desses, prefiro outro dia']);
+  assert.match(app.ultima(), /convênio ou particular/i, 'segue o agendamento normal');
+
+  await app.handleIncoming({ phone, body: 'particular' });
+  assert.match(app.ultima(), /prefere|primeiros dias/i);
+  assert.ok(app.store.findContactByPhone(phone).state.step.startsWith('agendar_'));
+});
+
+test('"sim" depois do lembrete de véspera confirma presença, não abre novo agendamento', async () => {
+  const app = makeApp();
+  const phone = '5511900020000';
+  await app.conversa(phone, AGENDAR);
+  app.sent.length = 0;
+
+  await app.handleIncoming({ phone, body: 'sim' });
+  assert.strictEqual(app.store.state.bookings[0].confirmation, 'confirmado');
+  assert.match(app.ultima(), /Presença confirmada/);
+  assert.strictEqual(app.store.state.bookings.length, 1, 'não criou consulta nova');
+});
+
+test('"não" avisa a recepção de que a vaga vai sobrar', async () => {
+  const app = makeApp();
+  const phone = '5511900021111';
+  await app.conversa(phone, AGENDAR);
+
+  await app.handleIncoming({ phone, body: 'não' });
+  assert.strictEqual(app.store.state.bookings[0].confirmation, 'recusado');
+  assert.match(app.ultima(), /Obrigada por avisar/);
+  assert.match(app.ultima(), /outra data|cancelar/i);
+  assert.ok(app.store.state.events.some((e) => /avisou que não vem/.test(e.text)));
 });

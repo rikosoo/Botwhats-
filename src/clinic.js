@@ -62,6 +62,13 @@ const CLINICA_PADRAO = {
       name: 'Primeira consulta',
       durationMin: 40,
       returnDays: 30,
+      price: 'R$ 400,00',
+      includes: [
+        'avaliacao completa e exame fisico',
+        'leitura dos exames que voce trouxer',
+        'plano de tratamento por escrito',
+        'retorno em ate 30 dias, sem custo',
+      ],
       prep: 'Traga exames anteriores e a lista dos medicamentos que voce usa.',
     },
     {
@@ -69,6 +76,8 @@ const CLINICA_PADRAO = {
       name: 'Retorno',
       durationMin: 20,
       returnDays: 0,
+      price: 'sem custo em ate 30 dias da consulta; depois disso, R$ 250,00',
+      includes: ['revisao do plano de tratamento', 'leitura dos exames solicitados'],
       prep: 'Traga os exames solicitados na ultima consulta.',
     },
     {
@@ -76,6 +85,8 @@ const CLINICA_PADRAO = {
       name: 'Exame / procedimento',
       durationMin: 30,
       returnDays: 0,
+      price: 'varia conforme o exame — a recepcao confirma o valor exato',
+      includes: ['realizacao do exame', 'laudo entregue em ate 5 dias uteis'],
       prep: 'Jejum de 8 horas. Pode beber agua. Nao suspenda medicamentos sem orientacao do medico.',
     },
   ],

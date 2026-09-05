@@ -37,10 +37,12 @@ const config = {
 
   // Lembretes de follow-up: dias apos o contato de quem ainda nao marcou.
   followUpOffsets: [1, 7, 15],
-  // Lembretes da consulta: dias antes do horario marcado (o de 1 dia pede confirmacao).
-  bookingOffsets: [15, 7, 1],
-  // Espera minima (dias) entre marcar e consultar para valer um toque no meio do caminho.
-  waitTouchMinDays: Number(process.env.WAIT_TOUCH_MIN_DAYS || 4),
+  // Lembretes da consulta: 7 e 3 dias antes (uteis, sem contagem regressiva)
+  // e a vespera, que e a mensagem de confirmacao.
+  bookingOffsets: [7, 3, 1],
+  // Silencio maximo (dias) entre marcar e o primeiro lembrete antes de valer
+  // um toque no meio da espera.
+  waitTouchMinDays: Number(process.env.WAIT_TOUCH_MIN_DAYS || 10),
 };
 
 module.exports = config;

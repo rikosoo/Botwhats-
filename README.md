@@ -19,6 +19,24 @@ O bot conversa como a recepção conversaria — não como uma URA.
 | Mandar tudo de uma vez | Pausa entre mensagens proporcional ao tamanho do texto, como alguém digitando |
 | Chutar | *"8h"* com 08:00 e 08:20 livres vira *"tenho 08:00 e 08:20, qual delas?"* |
 
+## Pergunta de preço
+
+Responder só o número faz o paciente comparar com o consultório da esquina e decidir por preço.
+A resposta sai completa e termina em **dois horários concretos**:
+
+> *Primeira consulta* — R$ 400,00
+> **O que está incluso:** 40 minutos com o Dr. …, avaliação completa, leitura dos seus exames,
+> plano de tratamento por escrito, retorno em até 30 dias sem custo.
+> Aceitamos Pix, dinheiro e cartão. Pelo convênio, atendemos Unimed, …
+>
+> Sobre a agenda, tenho estes dois horários:
+> **1.** segunda-feira (07/09) às 09:20  **2.** terça-feira (08/09) às 08:00
+
+Aceitar um deles leva direto ao cadastro; recusar volta para a escolha normal de dia. O que está
+incluso em cada tipo de atendimento fica em `src/clinic.js` (`price`, `includes`).
+
+![resposta de preço](docs/preco.png)
+
 ## Segurança clínica — o que o bot **não** faz
 
 Isto é uma regra do código, não uma recomendação:
@@ -41,16 +59,21 @@ São duas frentes, configuráveis em `src/config.js`:
 | Frente | Quando dispara | Conteúdo |
 | --- | --- | --- |
 | **Follow-up** | 1, 7 e 15 dias **depois** do contato de quem não marcou (o relógio reinicia a cada mensagem) | Convite para agendar; o de 15 dias é o último e oferece opt-out |
-| **Antes da consulta** | 15, 7 e **1** dia **antes** | A véspera **mostra o tempo reservado** ("a Dra. reservou 40 minutos só para você"), manda endereço e preparo, e **abre a porta de saída** em vez de perguntar "confirma?" |
-| **Meio da espera** | No meio do caminho entre marcar e consultar, quando a folga passa de 4 dias | Utilidade no lugar de cobrança: leve exames recentes, que o médico já adianta o plano |
+| **Antes da consulta** | **7 e 3 dias antes** | Utilidade, sem contagem regressiva: leve exames recentes, que o médico já adianta o plano. Nenhum lembrete diz "faltam X dias" |
+| **Véspera** | 1 dia antes | **Mostra o tempo reservado** ("a Dra. reservou 40 minutos só para você"), manda endereço e preparo, abre a porta de saída e pede um **sim ou não** simples |
+| **Meio da espera** | Só quando o silêncio entre marcar e o primeiro lembrete passa de 10 dias | Preenche o vazio de quem marcou com muita antecedência |
 | **Check-in** | Um dia depois da consulta, quando a recepção marca *compareceu* | "Ficou alguma dúvida sobre as orientações?" — a resposta cai na fila da recepção |
 | **Retorno** | Conforme `returnDays` do tipo de atendimento (padrão: 30 dias após a primeira consulta) | Convite para o retorno |
 | **Falta** | Dia seguinte a uma falta marcada no painel | Mensagem de reaproximação, sem cobrança |
 
-Por que a véspera não pergunta "confirma?": o paciente responde "confirmo" no automático, sem abrir
-a agenda dele. Mostrar o que foi reservado e **dar permissão para desmarcar** parece perda, mas é o
-que devolve o horário a tempo de encaixar outra pessoa. E a consulta marcada com folga é a que mais
-some — por isso o toque no meio da espera.
+Por que a véspera mostra o que foi reservado antes de pedir o sim: perguntar "confirma?" de saída
+faz o paciente responder no automático, sem abrir a agenda dele. Mostrando os minutos separados e
+**dando permissão para desmarcar**, o "não" chega antes do dia — e o horário volta para a agenda a
+tempo de encaixar outra pessoa. Quem responde **não** aparece no painel como *não vem*, com KPI
+próprio, para a recepção agir na hora.
+
+Nenhum lembrete faz contagem regressiva: "faltam 7 dias" cobra, "leve seus exames que a médica já
+adianta o plano" ajuda — e ambos lembram da consulta.
 
 Um lembrete só sai se ainda fizer sentido: quem marcou no meio do caminho não recebe follow-up,
 e consulta cancelada não gera aviso.
@@ -166,7 +189,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
-| `WAIT_TOUCH_MIN_DAYS` | `4` | Folga mínima entre marcar e consultar para valer o toque do meio |
+| `WAIT_TOUCH_MIN_DAYS` | `10` | Silêncio mínimo entre marcar e o primeiro lembrete para valer o toque do meio |
 | `BROADCAST_DELAY_MS` | `2500` | Intervalo entre as mensagens de um disparo |
 | `BROADCAST_MAX` | `200` | Teto de destinatários por disparo |
 | `CHROMIUM_PATH` | — | Caminho do Chromium, se o Puppeteer não achar sozinho |
@@ -218,7 +241,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 57 testes com node:test
+test/                 65 testes com node:test
 ```
 
 ## Testes

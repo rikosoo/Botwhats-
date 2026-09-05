@@ -3,7 +3,7 @@
 Anotações vindas de conteúdo sobre captação e follow-up em consultório, traduzidas para onde
 cada uma encaixa neste código. Nada aqui está implementado ainda.
 
-**Feito:** 1, 6, 7 e 8. **Na fila:** 2 → 4 → 5 → 3.
+**Feito:** 1, 5, 6, 7 e 8 — e a cadência do item 2 (7/3 dias, sem contagem regressiva). **Na fila:** 4 → 2 (conteúdo por toque) → 3.
 
 ---
 
@@ -87,6 +87,8 @@ mentir sobre a agenda, mesmo que alguém escreva a mensagem com pressa.
 ---
 
 ## 5. Resposta completa de preço com dois horários
+
+> ✅ **Implementado.**
 
 **Ideia.** Se a resposta à pergunta de preço é só o número, o paciente compara preço e decide por
 preço. Responder o pacote inteiro (valor, o que inclui, duração, retorno, pagamento) e fechar com

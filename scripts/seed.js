@@ -85,6 +85,16 @@ async function main() {
     }
   }
   historico(app);
+
+  // Alguém que respondeu "não" ao lembrete de véspera: a vaga precisa voltar
+  // para a agenda antes do dia.
+  const carla = app.store.findContactByPhone('5511988880003');
+  const consultaDaCarla = carla && app.agenda.nextBookingOf(carla.id);
+  if (consultaDaCarla) {
+    consultaDaCarla.confirmation = 'recusado';
+    app.store.logEvent('confirmacao', `⚠️ ${carla.name} avisou que não vem em ${consultaDaCarla.date}`);
+  }
+
   app.store.saveNow();
 
   const s = app.store.state;

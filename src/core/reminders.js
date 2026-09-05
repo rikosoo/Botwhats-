@@ -68,15 +68,18 @@ class Reminders {
   esperaNoMeio(booking, jaCriados, now = new Date()) {
     const inicio = new Date(booking.createdAt || now).getTime();
     const startsAt = new Date(booking.startsAt).getTime();
-    const espera = startsAt - inicio;
-    if (espera < (this.config.waitTouchMinDays || 4) * DAY_MS) return null;
 
-    const meio = inicio + espera / 2;
-    // Longe demais da consulta não faz sentido; perto demais vira eco da véspera.
+    // O que este toque cobre é o silêncio entre marcar e o primeiro lembrete —
+    // não a espera inteira. Com a régua de 7 e 3 dias, quem marca para daqui a
+    // dez dias já tem notícia cedo e não precisa de mais uma mensagem.
+    const primeiro = jaCriados.length
+      ? Math.min(...jaCriados.map((r) => new Date(r.dueAt).getTime()))
+      : startsAt;
+    const silencio = primeiro - inicio;
+    if (silencio < (this.config.waitTouchMinDays || 10) * DAY_MS) return null;
+
+    const meio = inicio + silencio / 2;
     if (meio <= now.getTime() + 12 * 3600000) return null;
-    if (meio >= startsAt - 1.5 * DAY_MS) return null;
-    const colide = jaCriados.some((r) => Math.abs(new Date(r.dueAt).getTime() - meio) < 12 * 3600000);
-    if (colide) return null;
 
     return this.store.addReminder({
       contactId: booking.contactId,

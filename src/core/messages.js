@@ -230,9 +230,38 @@ const M = {
       + 'Quer que eu já veja um horário?';
   },
 
-  valores(clinic) {
-    return `A consulta particular é ${clinic.privatePrice}\n${clinic.paymentInfo}\n\n`
-      + 'Se você tem convênio, me diz qual que eu confirmo se atendemos. 🙂';
+  /**
+   * Preço nunca vai sozinho: quem recebe só o número compara com o do vizinho
+   * e decide por ele. Vai o pacote inteiro — duração, o que está incluso,
+   * retorno e pagamento — e a conversa termina em dois horários concretos.
+   */
+  valores(clinic, service = null) {
+    const alvo = service || clinic.services[0];
+    const linhas = [`*${alvo.name}* — ${alvo.price || clinic.privatePrice}`];
+
+    linhas.push('', 'O que está incluso:');
+    linhas.push(`• ${alvo.durationMin} minutos de atendimento com ${clinic.professionals[0].name}`);
+    for (const item of alvo.includes || []) linhas.push(`• ${item}`);
+
+    linhas.push('', clinic.paymentInfo);
+    const convenios = clinic.insurances.filter((c) => c.toLowerCase() !== 'particular');
+    if (convenios.length) {
+      linhas.push(`Pelo convênio, atendemos ${convenios.join(', ')} — me diz qual é o seu que eu confirmo.`);
+    }
+    return linhas.join('\n');
+  },
+
+  /** Fecha a conversa de preço com dois horários de verdade, não "temos vaga essa semana". */
+  ofertaDeHorarios(slots, hoje) {
+    if (!slots.length) return null;
+    if (slots.length === 1) {
+      const [s] = slots;
+      return `Tenho ${formatDateFriendly(s.date, hoje)} às *${s.start}*. Fica bom para você?`;
+    }
+    const opcoes = slots.slice(0, 2)
+      .map((s, i) => `*${i + 1}.* ${formatDateFriendly(s.date, hoje)} às ${s.start}`);
+    return `Sobre a agenda, tenho estes dois horários:\n\n${opcoes.join('\n')}\n\n`
+      + 'Algum deles serve? Se preferir outro dia, é só dizer.';
   },
 
   documentos(clinic) {
@@ -304,13 +333,14 @@ const M = {
         '',
         'Se por algum motivo você não conseguir vir, me avisa que a gente encontra um horário melhor '
         + '— assim eu consigo oferecer essa vaga para outra pessoa.',
-        'Se estiver tudo certo, é só responder *confirmo*. 🙂',
+        '',
+        'Está de pé? Responda *sim* ou *não* que eu já cuido do resto. 🙂',
       );
       return partes.join('\n');
     }
 
-    // Demais toques antes da consulta: utilidade, não cobrança.
-    return M.lembreteEspera(clinic, contato, booking, service, `Faltam ${dias} dias`);
+    // Demais toques antes da consulta: utilidade, sem contagem regressiva.
+    return M.lembreteEspera(clinic, contato, booking, service);
   },
 
   /**
@@ -318,13 +348,11 @@ const M = {
    * paciente — e entrega algo que adianta o atendimento, em vez de cobrar
    * uma confirmação que ele já deu.
    */
-  lembreteEspera(clinic, contato, booking, service, abertura = null) {
+  lembreteEspera(clinic, contato, booking, service) {
     const nome = primeiroNome(contato) || 'tudo bem';
     const quando = `${formatDateLong(booking.date)} às ${booking.start}`;
     const partes = [
-      abertura
-        ? `Oi, ${nome}! ${abertura} para a sua consulta: ${quando}, com ${booking.professionalName}.`
-        : `Oi, ${nome}! Passando para confirmar que está tudo certo com a sua consulta de ${quando}, com ${booking.professionalName}.`,
+      `Oi, ${nome}! Sua consulta está marcada para ${quando}, com ${booking.professionalName}.`,
       '',
       'Se você tiver exames recentes, pode levar no dia — assim '
       + `${booking.professionalName} já avalia tudo e adianta o plano de tratamento.`,

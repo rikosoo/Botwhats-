@@ -15,7 +15,8 @@ function testConfig(overrides = {}) {
     chromiumPath: null,
     dataFile: path.join(os.tmpdir(), `botwhats-test-${crypto.randomUUID()}.json`),
     followUpOffsets: [1, 7, 15],
-    bookingOffsets: [15, 7, 1],
+    bookingOffsets: [7, 3, 1],
+    waitTouchMinDays: 10,
     ...overrides,
   };
 }
