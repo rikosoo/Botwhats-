@@ -8,10 +8,84 @@ const { indicadores } = require('./core/metrics');
 const { normalizarConvenios, conveniosAtivos } = require('./clinic');
 
 function createServer(app) {
-  const { store, agenda, reminders, broadcast, waitlist, channel, config } = app;
+  const { store, agenda, reminders, broadcast, waitlist, auth, channel, config } = app;
   const server = express();
   server.use(express.json());
   server.use(express.static(path.join(__dirname, '..', 'public')));
+
+  // Sinal de vida para monitoramento, sem contar nada sobre pacientes.
+  server.get('/api/ping', (req, res) => res.json({ ok: true, channel: channel.name, status: channel.status }));
+
+  const COOKIE = 'botwhats_sessao';
+
+  function lerCookie(req, nome) {
+    const bruto = req.headers.cookie || '';
+    for (const parte of bruto.split(';')) {
+      const [chave, ...resto] = parte.trim().split('=');
+      if (chave === nome) return decodeURIComponent(resto.join('='));
+    }
+    return null;
+  }
+
+  function definirCookie(res, token, dias) {
+    const partes = [
+      `${COOKIE}=${encodeURIComponent(token)}`,
+      'Path=/',
+      'HttpOnly',
+      'SameSite=Lax',
+      `Max-Age=${Math.round(dias * 24 * 3600)}`,
+    ];
+    if (config.cookieSecure) partes.push('Secure');
+    res.setHeader('Set-Cookie', partes.join('; '));
+  }
+
+  // ---------- login ----------
+
+  server.post('/api/login', (req, res) => {
+    const { username, password } = req.body || {};
+    const resultado = auth.entrar(username, password);
+    if (resultado.erro) return res.status(401).json({ error: resultado.erro });
+    definirCookie(res, resultado.token, config.sessionDays || 7);
+    store.logEvent('acesso', `${resultado.usuario.username} entrou no painel`);
+    return res.json({ user: resultado.usuario });
+  });
+
+  server.post('/api/logout', (req, res) => {
+    auth.sair(lerCookie(req, COOKIE));
+    res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; Max-Age=0`);
+    return res.json({ ok: true });
+  });
+
+  server.get('/api/session', (req, res) => {
+    const usuario = auth.usuarioDoToken(lerCookie(req, COOKIE));
+    return res.json({ user: usuario ? auth.publico(usuario) : null });
+  });
+
+  /**
+   * Daqui para baixo tudo exige sessão. O painel é a única porta para os dados
+   * dos pacientes, então a regra é fechada por padrão: rota nova nasce protegida.
+   */
+  server.use('/api', (req, res, next) => {
+    const usuario = auth.usuarioDoToken(lerCookie(req, COOKIE));
+    if (!usuario) return res.status(401).json({ error: 'Faça login para continuar' });
+    req.usuario = usuario;
+    return next();
+  });
+
+  server.post('/api/account/password', (req, res) => {
+    const { currentPassword, newPassword } = req.body || {};
+    const resultado = auth.trocarSenha(req.usuario, currentPassword, newPassword);
+    if (resultado.erro) return res.status(400).json({ error: resultado.erro });
+    res.setHeader('Set-Cookie', `${COOKIE}=; Path=/; HttpOnly; Max-Age=0`);
+    return res.json({ ok: true, relogin: true });
+  });
+
+  server.post('/api/account/username', (req, res) => {
+    const resultado = auth.trocarUsuario(req.usuario, (req.body || {}).username);
+    if (resultado.erro) return res.status(400).json({ error: resultado.erro });
+    store.logEvent('acesso', `Nome de usuário alterado para ${req.usuario.username}`);
+    return res.json({ user: auth.publico(req.usuario) });
+  });
 
   const clients = new Set();
   store.on('change', (change) => {
@@ -59,7 +133,7 @@ function createServer(app) {
     };
   }
 
-  server.get('/api/state', (req, res) => res.json(snapshot()));
+  server.get('/api/state', (req, res) => res.json({ ...snapshot(), user: auth.publico(req.usuario) }));
 
   server.get('/api/stream', (req, res) => {
     res.set({

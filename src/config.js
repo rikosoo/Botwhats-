@@ -31,6 +31,17 @@ const config = {
   // (0 desliga; no simulador e nos testes fica desligado).
   typingDelayMs: Number(process.env.TYPING_DELAY_MS || 1200),
 
+  // Acesso ao painel. O usuario padrao e criado na primeira execucao e ja
+  // vem marcado para trocar a senha.
+  admin: {
+    username: process.env.ADMIN_USER || 'Henrique',
+    password: process.env.ADMIN_PASSWORD || 'Henrique123',
+  },
+  sessionDays: Number(process.env.SESSION_DAYS || 7),
+  maxLoginAttempts: Number(process.env.MAX_LOGIN_ATTEMPTS || 8),
+  // Marque como true quando o painel estiver atras de HTTPS.
+  cookieSecure: process.env.COOKIE_SECURE === 'true',
+
   // Prazo (min) que a pessoa tem para responder a uma vaga oferecida.
   waitlistOfferMinutes: Number(process.env.WAITLIST_OFFER_MINUTES || 120),
 

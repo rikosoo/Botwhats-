@@ -184,10 +184,13 @@ some. O código já guarda `createdAt` e `startsAt` — falta usar os dois junto
 # O que ainda falta para uso real
 
 Levantamento do que um consultório sentiria falta hoje, em ordem de urgência.
-Os três primeiros são o que eu resolveria antes de ligar isso num número de verdade.
-**B e C já estão feitos** — falta o A, que é o bloqueador.
+Os três primeiros eram o que eu resolveria antes de ligar isso num número de verdade.
+**A, B e C já estão feitos.**
 
 ## A. Login no painel  ⚠️ bloqueador
+
+> ✅ **Implementado.** Falta ainda: um usuário por pessoa da equipe (hoje é um só) e HTTPS,
+> que depende de onde o serviço for hospedado.
 
 Hoje qualquer pessoa que alcance a porta do servidor abre o painel e vê nome, telefone, data de
 nascimento, convênio e conversa de todos os pacientes. Sem autenticação, isso não pode ficar

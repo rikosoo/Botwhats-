@@ -16,6 +16,8 @@ function emptyState() {
     events: [],
     campaigns: [],
     waitlist: [],
+    users: [],
+    sessions: [],
     clinic: structuredClone(CLINICA_PADRAO),
   };
 }

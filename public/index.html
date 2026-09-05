@@ -7,6 +7,20 @@
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <div id="loginScreen" class="login-screen" hidden>
+    <form id="loginForm" class="login-card">
+      <div class="login-logo">🩺</div>
+      <h1>Painel da recepção</h1>
+      <p class="sub">Entre para ver a agenda e as conversas.</p>
+      <label for="loginUser">Usuário</label>
+      <input id="loginUser" type="text" autocomplete="username" autofocus />
+      <label for="loginPass">Senha</label>
+      <input id="loginPass" type="password" autocomplete="current-password" />
+      <button type="submit">Entrar</button>
+      <p id="loginError" class="login-error" hidden></p>
+    </form>
+  </div>
+
   <header class="topbar">
     <div class="brand">
       <span class="logo">🩺</span>
@@ -16,10 +30,15 @@
       </div>
     </div>
     <div class="topbar-right">
+      <button id="btnLogout" class="ghost light" title="Sair do painel">Sair</button>
       <div class="status" id="openStatus"><span class="dot"></span><span class="label">—</span></div>
       <div class="status" id="channelStatus"><span class="dot"></span><span class="label">carregando…</span></div>
     </div>
   </header>
+
+  <div id="senhaPadraoAviso" class="banner" hidden>
+    ⚠️ Este painel ainda usa a senha padrão. Troque em <b>Ajustes → Acesso</b> antes de colocar no ar.
+  </div>
 
   <section class="kpis" id="kpis"></section>
 

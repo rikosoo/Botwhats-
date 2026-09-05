@@ -193,6 +193,27 @@ Quando você quer falar com um grupo de pacientes — "abrimos horários extras 
 > Envio em massa é o caminho mais rápido para o número ser bloqueado pelo WhatsApp. Mande só para
 > quem já falou com o consultório e espera notícias suas; nunca para lista comprada.
 
+## Login do painel
+
+O painel é a única porta para os dados dos pacientes, então ele **nasce fechado**: qualquer rota da
+API responde 401 sem sessão, inclusive o simulador e o disparo.
+
+- Na primeira execução, o usuário **`Henrique`** é criado com a senha padrão **`Henrique123`**, já
+  marcado para troca — um aviso amarelo fica no topo do painel até a senha ser alterada.
+- Em **Ajustes → Acesso** dá para trocar o nome de usuário e a senha. Trocar a senha exige a senha
+  atual (sessão aberta não basta) e **derruba as outras sessões** — que é o comportamento esperado
+  de quem trocou porque desconfia de vazamento.
+- Senha guardada com `scrypt` e sal por usuário; da sessão fica gravado o **hash** do token, não o
+  token. Quem ler o `db.json` não consegue se passar por alguém logado.
+- Oito tentativas erradas travam o usuário por 15 minutos.
+- `GET /api/ping` fica público para monitoramento, mas não conta nada sobre pacientes.
+
+Para outro usuário ou senha inicial, use `ADMIN_USER` e `ADMIN_PASSWORD` **antes da primeira
+execução** (depois disso, o cadastro já existe e a troca é pelo painel). Rodando atrás de HTTPS,
+ligue `COOKIE_SECURE=true`.
+
+![tela de login](docs/login.png)
+
 ## Como rodar
 
 ```bash
@@ -243,12 +264,23 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `WAIT_TOUCH_MIN_DAYS` | `10` | Silêncio mínimo entre marcar e o primeiro lembrete para valer o toque do meio |
 | `BROADCAST_DELAY_MS` | `2500` | Intervalo entre as mensagens de um disparo |
 | `BROADCAST_MAX` | `200` | Teto de destinatários por disparo |
+| `ADMIN_USER` | `Henrique` | Usuário criado na primeira execução |
+| `ADMIN_PASSWORD` | `Henrique123` | Senha inicial desse usuário |
+| `SESSION_DAYS` | `7` | Validade da sessão do painel |
+| `MAX_LOGIN_ATTEMPTS` | `8` | Tentativas antes de travar por 15 minutos |
+| `COOKIE_SECURE` | `false` | Ligue quando o painel estiver atrás de HTTPS |
 | `CHROMIUM_PATH` | — | Caminho do Chromium, se o Puppeteer não achar sozinho |
 
 ## API
 
 | Método | Rota | Descrição |
 | --- | --- | --- |
+| `POST` | `/api/login` | Abre a sessão (`{username, password}`) |
+| `POST` | `/api/logout` | Encerra a sessão |
+| `GET` | `/api/session` | Quem está logado |
+| `POST` | `/api/account/password` | Troca a senha (exige a atual) |
+| `POST` | `/api/account/username` | Troca o nome de usuário |
+| `GET` | `/api/ping` | Sinal de vida, público |
 | `GET` | `/api/state` | Snapshot completo do painel |
 | `GET` | `/api/stream` | Server-Sent Events: atualização em tempo real |
 | `POST` | `/api/simulate` | Injeta mensagem do paciente (`{phone, name, body}`) |
@@ -291,11 +323,12 @@ src/
   core/broadcast.js   segmentos, variáveis e disparo espaçado
   core/metrics.js     taxa de falta e efeito da confirmação
   core/waitlist.js    fila de espera e oferta automática de vaga
+  core/auth.js        login, sessões e troca de senha
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 81 testes com node:test
+test/                 90 testes com node:test
 ```
 
 ## Testes
@@ -313,8 +346,8 @@ a recepção — e o cálculo da taxa de falta, incluindo o caso em que a presen
 
 ## Próximos passos
 
-O que ainda falta para rodar num número de verdade — login no painel, tratamento de áudio e
-imagem, lista de espera para encaixe — está listado no fim de [`docs/roadmap.md`](docs/roadmap.md).
+O que ainda falta está listado no fim de [`docs/roadmap.md`](docs/roadmap.md) — os três
+bloqueadores (login, mídia e lista de espera) já saíram.
 
 Quatro itens do backlog já entraram: confirmação que mostra o horário reservado, toque no meio da
 espera, check-in do dia seguinte e taxa de falta no painel. O que falta — régua de follow-up com
@@ -331,5 +364,6 @@ ponto do código onde entra.
   registre a base legal do tratamento de dados (LGPD) para os telefones e cadastros armazenados.
 - Disparo em massa é responsabilidade de quem envia: só mande para pacientes que já procuraram o
   consultório e mantenha o opt-out funcionando (ele já é automático em `sair`).
-- Os dados ficam em `data/db.json`, sem criptografia. Para uso real, coloque o serviço atrás de
-  autenticação, restrinja o acesso ao painel e faça backup do arquivo.
+- Os dados ficam em `data/db.json`, sem criptografia. O painel já exige login, mas coloque o
+  serviço atrás de HTTPS (`COOKIE_SECURE=true`), restrinja quem alcança a porta e faça backup do
+  arquivo.

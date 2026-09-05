@@ -6,6 +6,7 @@ const { Reminders } = require('./core/reminders');
 const { Bot } = require('./core/bot');
 const { Broadcast } = require('./core/broadcast');
 const { Waitlist } = require('./core/waitlist');
+const { Auth } = require('./core/auth');
 const { MockChannel } = require('./channels/mock');
 const { WhatsAppWebChannel } = require('./channels/whatsappWeb');
 
@@ -40,6 +41,8 @@ function createApp(config, { channel } = {}) {
   const bot = new Bot(store, agenda, reminders, config);
   const broadcast = new Broadcast(store, agenda, config, sendText);
   const waitlist = new Waitlist(store, agenda, config, sendText);
+  const auth = new Auth(store, config);
+  auth.garantirUsuarioPadrao();
   bot.waitlist = waitlist;
 
   // Horário desmarcado é vaga: quem está esperando ouve primeiro.
@@ -57,7 +60,7 @@ function createApp(config, { channel } = {}) {
   chan.onMessage = handleIncoming;
 
   return {
-    config, store, agenda, reminders, bot, broadcast, waitlist,
+    config, store, agenda, reminders, bot, broadcast, waitlist, auth,
     channel: chan, sendText, handleIncoming,
   };
 }

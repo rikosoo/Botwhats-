@@ -34,8 +34,59 @@ async function api(path, options) {
     body: options && options.body ? JSON.stringify(options.body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
+  if (res.status === 401) {
+    mostrarLogin();
+    const erro = new Error(data.error || 'Faça login para continuar');
+    erro.semSessao = true;
+    throw erro;
+  }
   if (!res.ok) throw new Error(data.error || 'Falha na requisição');
   return data;
+}
+
+// ---------- acesso ----------
+
+function mostrarLogin(mensagem) {
+  const tela = $('#loginScreen');
+  tela.hidden = false;
+  const erro = $('#loginError');
+  erro.hidden = !mensagem;
+  erro.textContent = mensagem || '';
+  const campo = $('#loginUser');
+  if (campo && !campo.value) campo.focus();
+}
+
+function esconderLogin() {
+  $('#loginScreen').hidden = true;
+  $('#loginPass').value = '';
+  $('#loginError').hidden = true;
+}
+
+async function entrar(e) {
+  e.preventDefault();
+  const username = $('#loginUser').value.trim();
+  const password = $('#loginPass').value;
+  if (!username || !password) return mostrarLogin('Preencha usuário e senha.');
+  try {
+    const res = await fetch('/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return mostrarLogin(data.error || 'Não consegui entrar.');
+    esconderLogin();
+    await carregar();
+    return undefined;
+  } catch {
+    return mostrarLogin('Não consegui falar com o servidor.');
+  }
+}
+
+async function sair() {
+  await fetch('/api/logout', { method: 'POST' });
+  state.data = null;
+  mostrarLogin();
 }
 
 // ---------- formatação ----------
@@ -1161,6 +1212,8 @@ function renderConfig() {
     bloco.append(salvarAgenda);
     panel.append(bloco);
   }
+
+  blocoAcesso(panel);
 }
 
 // ---------- ações ----------
@@ -1193,12 +1246,22 @@ async function enviarMidia(tipo) {
 }
 
 async function carregar() {
-  state.data = await api('/api/state');
+  try {
+    state.data = await api('/api/state');
+  } catch (err) {
+    if (err.semSessao) return;
+    throw err;
+  }
+  esconderLogin();
+  $('#senhaPadraoAviso').hidden = !(state.data.user && state.data.user.mustChangePassword);
   if (!state.selected && state.data.contacts.length) state.selected = state.data.contacts[0].id;
   render();
 }
 
 function ligarEventos() {
+  $('#loginForm').addEventListener('submit', entrar);
+  $('#btnLogout').addEventListener('click', sair);
+
   $('#searchContacts').addEventListener('input', (e) => {
     state.filtro = e.target.value;
     renderContacts();
@@ -1259,6 +1322,56 @@ function ligarEventos() {
   };
 }
 
+/** Bloco "Acesso" da aba Ajustes: trocar usuário e senha. */
+function blocoAcesso(panel) {
+  const user = state.data.user || {};
+  panel.append(el('hr'));
+  panel.append(el('div', 'day-title', 'Acesso ao painel'));
+  panel.append(el('div', 'desc', `Você está logado como ${user.username}.`));
+
+  if (user.mustChangePassword) {
+    panel.append(el('div', 'warn-note',
+      'Este painel ainda usa a senha padrão. Troque antes de deixar o endereço acessível.'));
+  }
+
+  panel.append(campo('Nome de usuário', user.username, 'cfgUsername'));
+  const salvarUsuario = el('button', 'ghost', 'Salvar usuário');
+  salvarUsuario.addEventListener('click', async () => {
+    try {
+      await api('/api/account/username', { method: 'POST', body: { username: $('#cfgUsername').value } });
+      toast('Nome de usuário atualizado');
+      await carregar();
+    } catch (err) { toast(err.message); }
+  });
+  panel.append(salvarUsuario);
+
+  const senhaAtual = campo('Senha atual', '', 'cfgSenhaAtual');
+  senhaAtual.querySelector('input').type = 'password';
+  const senhaNova = campo('Nova senha (mínimo 8, com letras e números)', '', 'cfgSenhaNova');
+  senhaNova.querySelector('input').type = 'password';
+  const senhaRepete = campo('Repita a nova senha', '', 'cfgSenhaRepete');
+  senhaRepete.querySelector('input').type = 'password';
+  panel.append(senhaAtual, senhaNova, senhaRepete);
+
+  const salvarSenha = el('button', null, 'Trocar senha');
+  salvarSenha.addEventListener('click', async () => {
+    const nova = $('#cfgSenhaNova').value;
+    if (nova !== $('#cfgSenhaRepete').value) return toast('A nova senha e a repetição não conferem');
+    try {
+      await api('/api/account/password', {
+        method: 'POST',
+        body: { currentPassword: $('#cfgSenhaAtual').value, newPassword: nova },
+      });
+      // A troca derruba as sessões: entrar de novo é o comportamento esperado.
+      toast('Senha alterada — entre de novo');
+      state.data = null;
+      mostrarLogin('Senha alterada. Entre com a nova senha.');
+    } catch (err) { toast(err.message); }
+    return undefined;
+  });
+  panel.append(salvarSenha);
+}
+
 ligarEventos();
-carregar().catch((err) => toast(err.message));
+carregar().catch((err) => { if (!err.semSessao) toast(err.message); });
 setInterval(() => carregar().catch(() => {}), 60000);
