@@ -22,6 +22,9 @@ loadDotEnv();
 const config = {
   channel: process.env.CHANNEL || 'mock',
   port: Number(process.env.PORT || 3000),
+  // Endereco de escuta. Em servidor exposto, use 127.0.0.1: o painel fica
+  // alcancavel so pela propria maquina (e por um tunel SSH).
+  host: process.env.HOST || '0.0.0.0',
   timezone: process.env.TZ || 'America/Sao_Paulo',
   schedulerIntervalMs: Number(process.env.SCHEDULER_INTERVAL_MS || 30000),
   chromiumPath: process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,

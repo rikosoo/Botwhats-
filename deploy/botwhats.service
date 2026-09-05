@@ -1,0 +1,35 @@
+# Serviço do painel + bot. Copie para /etc/systemd/system/botwhats.service
+#
+#   sudo cp deploy/botwhats.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now botwhats
+#
+# O app lê o .env da própria pasta, então não é preciso EnvironmentFile aqui.
+
+[Unit]
+Description=Botwhats — autoatendimento do consultório no WhatsApp
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Botwhats-
+ExecStart=/usr/bin/node src/index.js
+Restart=always
+RestartSec=5
+# Chromium é o que mais consome; se estourar, o serviço reinicia sozinho.
+MemoryMax=1400M
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=botwhats
+
+# Endurecimento básico: o serviço não precisa de nada fora da própria pasta.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/Botwhats-
+
+[Install]
+WantedBy=multi-user.target

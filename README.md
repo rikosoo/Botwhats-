@@ -53,6 +53,11 @@ O conteúdo da mídia **não é baixado nem armazenado** — áudio e imagem de 
 dado clínico, e o consultório não precisa de cópia disso no servidor. Fica registrado só o tipo, e
 a recepção abre a mensagem no WhatsApp.
 
+## Colocar no ar
+
+Para rodar num servidor com acesso só seu, veja [`docs/deploy-aws.md`](docs/deploy-aws.md): EC2 com
+a porta do painel fechada, acesso por túnel SSH, serviço no systemd e backup diário.
+
 ## Convênios
 
 Na aba **Ajustes** do painel dá para:
@@ -261,6 +266,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | --- | --- | --- |
 | `CHANNEL` | `mock` | `mock` (simulador) ou `whatsapp` (QR Code) |
 | `PORT` | `3000` | Porta do painel |
+| `HOST` | `0.0.0.0` | Endereço de escuta; use `127.0.0.1` em servidor exposto |
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |

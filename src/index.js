@@ -11,9 +11,10 @@ async function main() {
   app.reminders.start();
   app.waitlist.start();
 
-  server.listen(config.port, () => {
+  server.listen(config.port, config.host, () => {
     const clinica = app.store.clinic;
     console.log(`\n  ${clinica.name} — painel da recepção em http://localhost:${config.port}`);
+    if (config.host === '127.0.0.1') console.log('  Escutando só em 127.0.0.1 (use um túnel SSH para acessar).');
     console.log(`  Canal: ${config.channel} | Fuso: ${config.timezone} | Assistente: ${clinica.assistantName}`);
     console.log(`  Lembretes: follow-up ${config.followUpOffsets.join('/')} dias · `
       + `${config.bookingOffsets.join('/')} dias antes da consulta\n`);
