@@ -214,6 +214,10 @@ ligue `COOKIE_SECURE=true`.
 
 ![tela de login](docs/login.png)
 
+Dentro do painel, **Ajustes → Acesso**:
+
+![troca de usuário e senha](docs/acesso.png)
+
 ## Como rodar
 
 ```bash
