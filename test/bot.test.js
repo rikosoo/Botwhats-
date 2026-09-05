@@ -309,3 +309,46 @@ test('"não" avisa a recepção de que a vaga vai sobrar', async () => {
   assert.match(app.ultima(), /outra data|cancelar/i);
   assert.ok(app.store.state.events.some((e) => /avisou que não vem/.test(e.text)));
 });
+
+test('convênio suspenso tem resposta própria, diferente de "não atendemos"', async () => {
+  const app = makeApp();
+  const phone = '5511900022222';
+  // Amil está cadastrada, porém com credenciamento suspenso.
+  await app.conversa(phone, ['oi', 'quero marcar', 'retorno', 'amil']);
+
+  assert.match(app.ultima(), /credenciamento está suspenso/i);
+  assert.doesNotMatch(app.ultima(), /nunca|não atendemos amil/i);
+
+  await app.handleIncoming({ phone, body: 'pode ser particular' });
+  assert.strictEqual(app.store.findContactByPhone(phone).state.data.insurance, 'Particular');
+});
+
+test('convênio suspenso não aparece na lista oferecida', async () => {
+  const app = makeApp();
+  const phone = '5511900023333';
+  await app.conversa(phone, ['oi', 'quero marcar', 'retorno']);
+
+  assert.match(app.ultima(), /Unimed/);
+  assert.doesNotMatch(app.ultima(), /Amil/);
+});
+
+test('consultório só particular não pergunta convênio', async () => {
+  const app = makeApp();
+  app.store.clinic.acceptsInsurance = false;
+  const phone = '5511900024444';
+
+  await app.conversa(phone, ['oi', 'quero marcar uma consulta', 'primeira consulta']);
+  assert.doesNotMatch(app.ultima(), /convênio ou particular/i);
+  assert.match(app.ultima(), /prefere|primeiros dias/i, 'já vai para profissional ou dia');
+  assert.strictEqual(app.store.findContactByPhone(phone).state.data.insurance, 'Particular');
+});
+
+test('no modo particular a pergunta de convênio é respondida direto', async () => {
+  const app = makeApp();
+  app.store.clinic.acceptsInsurance = false;
+  const phone = '5511900025555';
+
+  await app.conversa(phone, ['oi', 'vocês atendem unimed?']);
+  assert.match(app.ultima(), /apenas em regime particular/i);
+  assert.match(app.ultima(), /R\$ 400/);
+});

@@ -5,6 +5,7 @@ const express = require('express');
 
 const { SEGMENTOS, VARIAVEIS } = require('./core/broadcast');
 const { indicadores } = require('./core/metrics');
+const { normalizarConvenios, conveniosAtivos } = require('./clinic');
 
 function createServer(app) {
   const { store, agenda, reminders, broadcast, channel, config } = app;
@@ -22,7 +23,7 @@ function createServer(app) {
   function snapshot() {
     const hoje = agenda.today();
     return {
-      clinic: store.clinic,
+      clinic: { ...store.clinic, conveniosAtivos: conveniosAtivos(store.clinic) },
       timezone: config.timezone,
       hoje,
       aberto: agenda.isOpenNow(),
@@ -270,9 +271,14 @@ function createServer(app) {
   server.get('/api/clinic', (req, res) => res.json(store.clinic));
 
   server.put('/api/clinic', (req, res) => {
+    if (req.body && req.body.insurances) {
+      // Aceita ["Unimed"] ou [{ name, active }] e grava sempre no formato novo.
+      req.body.insurances = normalizarConvenios(req.body.insurances);
+    }
     const permitido = [
       'name', 'specialty', 'assistantName', 'address', 'addressHint', 'mapsUrl', 'phone',
-      'hoursText', 'insurances', 'privatePrice', 'paymentInfo', 'documents', 'services', 'policies',
+      'hoursText', 'insurances', 'acceptsInsurance', 'privatePrice', 'paymentInfo',
+      'documents', 'services', 'policies',
     ];
     for (const campo of permitido) {
       if (req.body && req.body[campo] !== undefined) store.clinic[campo] = req.body[campo];

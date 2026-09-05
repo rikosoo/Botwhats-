@@ -5,7 +5,7 @@ const path = require('path');
 const { EventEmitter } = require('events');
 const crypto = require('crypto');
 
-const { CLINICA_PADRAO } = require('../clinic');
+const { CLINICA_PADRAO, normalizarConvenios } = require('../clinic');
 
 function emptyState() {
   return {
@@ -38,6 +38,8 @@ class Store extends EventEmitter {
         ...(parsed.clinic || {}),
         policies: { ...CLINICA_PADRAO.policies, ...((parsed.clinic || {}).policies || {}) },
       };
+      // Bancos gravados antes do cadastro de convênios guardavam só os nomes.
+      this.state.clinic.insurances = normalizarConvenios(this.state.clinic.insurances);
     } catch (err) {
       console.error('[store] falha ao ler o banco, iniciando vazio:', err.message);
       this.state = emptyState();

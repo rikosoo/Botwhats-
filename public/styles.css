@@ -369,3 +369,21 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .mini-row .val.bom { color: #1a8f5a; }
 .mini-row .val.atencao { color: #b8860b; }
 .mini-row .val.ruim { color: #d32f2f; }
+
+/* ---------- cadastro de convênios ---------- */
+
+.switch-row { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
+.switch-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+
+.conv-list { display: grid; gap: 4px; margin-bottom: 8px; }
+.conv-row {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  border: 1px solid var(--line); border-radius: 9px; background: var(--bg-soft);
+}
+.conv-row input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent); }
+.conv-row .conv-name { flex: 1; font-size: 13px; }
+.conv-row .conv-name.off { color: var(--muted); text-decoration: line-through; }
+.conv-row button { padding: 2px 8px; font-size: 12px; }
+
+.conv-add { display: flex; gap: 6px; }
+.conv-add input { flex: 1; }

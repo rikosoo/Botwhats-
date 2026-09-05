@@ -905,8 +905,103 @@ function campo(label, valor, id, multilinha) {
   return box;
 }
 
+/**
+ * Cadastro de convênios: dá para desligar um plano sem apagá-lo (credenciamento
+ * suspenso) ou desligar todos de uma vez, quando o consultório é só particular.
+ */
+function blocoConvenios(c) {
+  // O painel se redesenha a cada evento do servidor. As edições ainda não
+  // salvas precisam sobreviver a isso — só recarregamos do servidor quando o
+  // cadastro mudou de verdade lá.
+  const assinatura = JSON.stringify([c.acceptsInsurance !== false, c.insurances]);
+  if (!state.convenios || state.convenios.assinatura !== assinatura) {
+    state.convenios = {
+      assinatura,
+      aceita: c.acceptsInsurance !== false,
+      lista: (c.insurances || []).map((i) => (typeof i === 'string' ? { name: i, active: true } : { ...i })),
+    };
+  }
+
+  const box = el('div', 'field');
+  box.append(el('label', null, 'Convênios'));
+
+  const modo = el('label', 'switch-row');
+  const toggle = el('input');
+  toggle.type = 'checkbox';
+  toggle.checked = state.convenios.aceita;
+  toggle.addEventListener('change', () => {
+    state.convenios.aceita = toggle.checked;
+    renderConfig();
+  });
+  modo.append(toggle, el('span', null, 'Atendemos por convênio'));
+  box.append(modo);
+
+  if (!state.convenios.aceita) {
+    box.append(el('div', 'warn-note',
+      'Modo particular: o bot não pergunta convênio, avisa que o atendimento é só particular '
+      + 'e já segue para o horário. Os planos abaixo ficam guardados para quando voltar.'));
+  }
+
+  const lista = el('div', 'conv-list');
+  for (const convenio of state.convenios.lista) {
+    const linha = el('div', 'conv-row');
+    const ativo = el('input');
+    ativo.type = 'checkbox';
+    ativo.checked = convenio.active !== false;
+    ativo.disabled = !state.convenios.aceita;
+    ativo.title = 'Atendendo agora';
+    ativo.addEventListener('change', () => { convenio.active = ativo.checked; renderConfig(); });
+    linha.append(ativo);
+
+    const nome = el('span', `conv-name ${convenio.active === false || !state.convenios.aceita ? 'off' : ''}`,
+      convenio.name);
+    linha.append(nome);
+    if (convenio.active === false) linha.append(el('span', 'badge aguardando', 'suspenso'));
+
+    const remover = el('button', 'ghost', '✕');
+    remover.title = 'Remover do cadastro';
+    remover.addEventListener('click', () => {
+      state.convenios.lista = state.convenios.lista.filter((x) => x !== convenio);
+      renderConfig();
+    });
+    linha.append(remover);
+    lista.append(linha);
+  }
+  if (!state.convenios.lista.length) lista.append(el('div', 'desc', 'Nenhum convênio cadastrado.'));
+  box.append(lista);
+
+  const adicionar = el('div', 'conv-add');
+  const entrada = el('input');
+  entrada.type = 'text';
+  entrada.placeholder = 'Adicionar convênio…';
+  const botaoAdd = el('button', 'ghost', 'Adicionar');
+  const incluir = () => {
+    const nome = entrada.value.trim();
+    if (!nome) return;
+    if (state.convenios.lista.some((x) => x.name.toLowerCase() === nome.toLowerCase())) {
+      return toast('Esse convênio já está no cadastro');
+    }
+    state.convenios.lista.push({ name: nome, active: true });
+    renderConfig();
+  };
+  botaoAdd.addEventListener('click', incluir);
+  entrada.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); incluir(); } });
+  adicionar.append(entrada, botaoAdd);
+  box.append(adicionar);
+
+  box.append(el('div', 'desc', 'Desmarcar o quadrado deixa o plano suspenso: fica no cadastro, '
+    + 'mas o bot não oferece e avisa que o credenciamento está pausado.'));
+  return box;
+}
+
 function renderConfig() {
   const panel = $('#tab-config');
+  // Não redesenha por cima de quem está digitando — mas marcar uma caixa
+  // precisa redesenhar, senão o resto da tela não acompanha a mudança.
+  const foco = document.activeElement;
+  const digitando = foco && panel.contains(foco)
+    && (foco.tagName === 'TEXTAREA' || (foco.tagName === 'INPUT' && foco.type !== 'checkbox'));
+  if (panel.childElementCount && digitando) return;
   panel.innerHTML = '';
   const c = state.data.clinic;
 
@@ -918,7 +1013,7 @@ function renderConfig() {
   panel.append(campo('Horário de funcionamento (texto)', c.hoursText, 'cfgHours'));
   panel.append(campo('Endereço', c.address, 'cfgAddress', true));
   panel.append(campo('Referência do endereço', c.addressHint, 'cfgHint', true));
-  panel.append(campo('Convênios aceitos (vírgula)', c.insurances.join(', '), 'cfgInsurances', true));
+  panel.append(blocoConvenios(c));
   panel.append(campo('Valor particular', c.privatePrice, 'cfgPrice', true));
   panel.append(campo('O que levar (vírgula)', c.documents.join(', '), 'cfgDocs', true));
 
@@ -934,11 +1029,13 @@ function renderConfig() {
         hoursText: $('#cfgHours').value,
         address: $('#cfgAddress').value,
         addressHint: $('#cfgHint').value,
-        insurances: $('#cfgInsurances').value.split(',').map((s) => s.trim()).filter(Boolean),
+        acceptsInsurance: state.convenios.aceita,
+        insurances: state.convenios.lista,
         privatePrice: $('#cfgPrice').value,
         documents: $('#cfgDocs').value.split(',').map((s) => s.trim()).filter(Boolean),
       },
     });
+    state.convenios = null;
     toast('Dados atualizados');
     await carregar();
   });

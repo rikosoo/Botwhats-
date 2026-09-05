@@ -19,6 +19,22 @@ O bot conversa como a recepção conversaria — não como uma URA.
 | Mandar tudo de uma vez | Pausa entre mensagens proporcional ao tamanho do texto, como alguém digitando |
 | Chutar | *"8h"* com 08:00 e 08:20 livres vira *"tenho 08:00 e 08:20, qual delas?"* |
 
+## Convênios
+
+Na aba **Ajustes** do painel dá para:
+
+- **ligar ou desligar o atendimento por convênio** de uma vez — no modo particular o bot para de
+  perguntar "convênio ou particular", avisa que o atendimento é só particular e vai direto ao horário;
+- **suspender um plano sem apagá-lo** (credenciamento pausado): ele some da lista oferecida, e quem
+  perguntar por ele recebe *"no momento não estamos atendendo pela X"* em vez de *"não atendemos"* —
+  são situações diferentes e o paciente merece a resposta certa;
+- **adicionar e remover** planos do cadastro.
+
+O cadastro fica em `clinic.insurances` (`[{ name, active }]`) com `clinic.acceptsInsurance` como
+chave geral. Bancos antigos, que guardavam só os nomes, são convertidos ao carregar.
+
+![cadastro de convênios](docs/convenios.png)
+
 ## Pergunta de preço
 
 Responder só o número faz o paciente comparar com o consultório da esquina e decidir por preço.
@@ -241,7 +257,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 65 testes com node:test
+test/                 69 testes com node:test
 ```
 
 ## Testes

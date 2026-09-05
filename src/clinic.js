@@ -14,7 +14,15 @@ const CLINICA_PADRAO = {
   mapsUrl: 'https://maps.google.com/?q=Rua+das+Flores+123',
   phone: '(11) 4000-0000',
   hoursText: 'segunda a sexta, das 8h as 18h',
-  insurances: ['Unimed', 'Bradesco Saude', 'SulAmerica', 'Amil', 'Particular'],
+  // Convenios cadastrados. `active: false` deixa o plano no cadastro sem
+  // oferece-lo ao paciente — util quando o credenciamento fica suspenso.
+  acceptsInsurance: true,
+  insurances: [
+    { name: 'Unimed', active: true },
+    { name: 'Bradesco Saude', active: true },
+    { name: 'SulAmerica', active: true },
+    { name: 'Amil', active: false },
+  ],
   privatePrice: 'R$ 400,00 (consulta particular, com retorno em ate 30 dias incluso)',
   paymentInfo: 'Aceitamos Pix, dinheiro e cartao (credito em ate 3x).',
   documents: ['documento com foto', 'carteirinha do convenio', 'pedido medico (quando houver)', 'exames anteriores'],
@@ -101,6 +109,30 @@ const CLINICA_PADRAO = {
   },
 };
 
+/** Aceita tanto o formato antigo (lista de nomes) quanto o novo. */
+function normalizarConvenios(lista) {
+  return (lista || [])
+    .map((item) => (typeof item === 'string' ? { name: item, active: true } : item))
+    .filter((item) => item && item.name && item.name.toLowerCase() !== 'particular');
+}
+
+/** Convenios que o consultorio esta atendendo agora. */
+function conveniosAtivos(clinic) {
+  if (!clinic.acceptsInsurance) return [];
+  return normalizarConvenios(clinic.insurances).filter((c) => c.active).map((c) => c.name);
+}
+
+/** Convenio cadastrado porem suspenso — vale uma resposta diferente de "nao atendemos". */
+function convenioSuspenso(clinic, nome) {
+  return normalizarConvenios(clinic.insurances)
+    .some((c) => !c.active && c.name.toLowerCase() === String(nome).toLowerCase());
+}
+
+/** Opcoes que o paciente ve na hora de escolher. */
+function opcoesDePagamento(clinic) {
+  return [...conveniosAtivos(clinic), 'Particular'];
+}
+
 /** Servico pelo id, com fallback no primeiro cadastrado. */
 function findService(clinic, serviceId) {
   return clinic.services.find((s) => s.id === serviceId) || clinic.services[0];
@@ -111,4 +143,12 @@ function findProfessional(clinic, professionalId) {
   return clinic.professionals.find((p) => p.id === professionalId) || null;
 }
 
-module.exports = { CLINICA_PADRAO, findService, findProfessional };
+module.exports = {
+  CLINICA_PADRAO,
+  findService,
+  findProfessional,
+  normalizarConvenios,
+  conveniosAtivos,
+  convenioSuspenso,
+  opcoesDePagamento,
+};

@@ -3,7 +3,9 @@
 const M = require('./messages');
 const nlu = require('./nlu');
 const triage = require('./triage');
-const { findService, findProfessional } = require('../clinic');
+const {
+  findService, findProfessional, conveniosAtivos, convenioSuspenso, opcoesDePagamento,
+} = require('../clinic');
 const { timeKey, formatDateBr } = require('./agenda');
 
 /**
@@ -345,6 +347,12 @@ class Bot {
     contato.state.data.serviceId = service.id;
     contato.state.data.serviceName = service.name;
     if (contato.state.data.insurance) return this.perguntarProfissional(contato);
+
+    // Só particular: não faz sentido perguntar o convênio.
+    if (!conveniosAtivos(this.clinic).length) {
+      contato.state.data.insurance = 'Particular';
+      return this.perguntarProfissional(contato);
+    }
     contato.state.step = 'agendar_convenio';
     return [M.perguntarConvenio(this.clinic)];
   }
@@ -370,9 +378,10 @@ class Bot {
       return this.perguntarProfissional(contato);
     }
 
-    const numero = nlu.lerNumero(body, this.clinic.insurances.length);
+    const opcoes = opcoesDePagamento(this.clinic);
+    const numero = nlu.lerNumero(body, opcoes.length);
     if (numero) {
-      dados.insurance = this.clinic.insurances[numero - 1];
+      dados.insurance = opcoes[numero - 1];
       return this.perguntarProfissional(contato);
     }
 
@@ -381,10 +390,19 @@ class Bot {
       return this.perguntarProfissional(contato);
     }
 
-    const aceito = nlu.lerConvenio(body, this.clinic.insurances);
+    const aceito = nlu.lerConvenio(body, opcoes);
     if (aceito) {
       dados.insurance = aceito;
       return this.perguntarProfissional(contato);
+    }
+
+    // Plano cadastrado, mas com credenciamento suspenso: a resposta é outra.
+    const suspenso = (this.clinic.insurances || [])
+      .map((c) => (typeof c === 'string' ? c : c.name))
+      .find((nome) => texto.includes(nlu.normalizar(nome)) && convenioSuspenso(this.clinic, nome));
+    if (suspenso) {
+      dados.aguardandoParticular = true;
+      return [M.convenioSuspenso(this.clinic, suspenso)];
     }
 
     // Citou um plano que não atendemos: oferece particular em vez de travar.

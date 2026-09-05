@@ -1,6 +1,7 @@
 'use strict';
 
 const { formatDateBr, formatDateLong, formatDateFriendly } = require('./agenda');
+const { conveniosAtivos, opcoesDePagamento } = require('../clinic');
 
 /**
  * Todo o texto que o paciente lê está aqui — em um lugar só, para o
@@ -105,8 +106,20 @@ const M = {
   },
 
   perguntarConvenio(clinic) {
-    return `Você vai usar convênio ou particular?\n\n${lista(clinic.insurances, (c) => c)}\n\n`
+    return `Você vai usar convênio ou particular?\n\n${lista(opcoesDePagamento(clinic), (c) => c)}\n\n`
       + 'Pode escrever o nome do plano, se preferir.';
+  },
+
+  /** Consultório que só atende particular não faz o paciente adivinhar. */
+  somenteParticular(clinic) {
+    return `Nós atendemos apenas em regime particular, sem convênio.\n\n`
+      + `${clinic.services[0].name}: ${clinic.services[0].price || clinic.privatePrice}. ${clinic.paymentInfo}`;
+  },
+
+  /** Plano cadastrado, mas com credenciamento suspenso. */
+  convenioSuspenso(clinic, nome) {
+    return `No momento não estamos atendendo pela ${nome} — o credenciamento está suspenso. 😕\n\n`
+      + `Dá para fazer como particular: ${clinic.privatePrice}. ${clinic.paymentInfo}\n\nQuer seguir assim?`;
   },
 
   convenioNaoAtendido(clinic, nome) {
@@ -225,7 +238,8 @@ const M = {
   },
 
   convenios(clinic) {
-    const aceitos = clinic.insurances.filter((c) => c.toLowerCase() !== 'particular');
+    const aceitos = conveniosAtivos(clinic);
+    if (!aceitos.length) return M.somenteParticular(clinic);
     return `Trabalhamos com: ${aceitos.join(', ')}.\n\nTambém atendemos particular — ${clinic.privatePrice}\n\n`
       + 'Quer que eu já veja um horário?';
   },
@@ -244,10 +258,10 @@ const M = {
     for (const item of alvo.includes || []) linhas.push(`• ${item}`);
 
     linhas.push('', clinic.paymentInfo);
-    const convenios = clinic.insurances.filter((c) => c.toLowerCase() !== 'particular');
-    if (convenios.length) {
-      linhas.push(`Pelo convênio, atendemos ${convenios.join(', ')} — me diz qual é o seu que eu confirmo.`);
-    }
+    const convenios = conveniosAtivos(clinic);
+    linhas.push(convenios.length
+      ? `Pelo convênio, atendemos ${convenios.join(', ')} — me diz qual é o seu que eu confirmo.`
+      : 'Atendemos apenas em regime particular, sem convênio.');
     return linhas.join('\n');
   },
 
