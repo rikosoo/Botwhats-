@@ -218,9 +218,10 @@ e de números repetidos, teto por disparo e envio agendado.
 
 ## Próximos passos
 
-As ideias já mapeadas para as próximas versões — régua de follow-up com propósito por toque,
-confirmação que mostra o horário reservado, escassez calculada da agenda e taxa de falta no
-painel — estão em [`docs/roadmap.md`](docs/roadmap.md), cada uma com o ponto do código onde entra.
+As ideias já mapeadas para as próximas versões — confirmação que mostra o horário reservado,
+toque no meio da espera com utilidade no lugar de cobrança, check-in no dia seguinte à consulta,
+taxa de falta no painel, régua de follow-up com propósito por toque e escassez calculada da agenda
+— estão em [`docs/roadmap.md`](docs/roadmap.md), cada uma com o ponto do código onde entra.
 
 ## Avisos
 

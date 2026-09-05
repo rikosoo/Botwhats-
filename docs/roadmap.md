@@ -3,7 +3,7 @@
 Anotações vindas de conteúdo sobre captação e follow-up em consultório, traduzidas para onde
 cada uma encaixa neste código. Nada aqui está implementado ainda.
 
-Ordem sugerida: 1 → 2 → 6 → 3 → 4 → 5 (do mais barato e mais útil para o mais trabalhoso).
+Ordem sugerida: 1 → 8 → 7 → 6 → 2 → 4 → 5 → 3 (do mais barato e mais útil para o mais trabalhoso).
 
 ---
 
@@ -113,3 +113,58 @@ para saber se o follow-up está funcionando.
 
 **Esforço.** Pequeno para as duas primeiras (só somar o que já existe); médio para a atribuição
 por toque.
+
+---
+
+## 7. Check-in no dia seguinte à consulta
+
+**Ideia.** Um dia depois do atendimento, uma mensagem curta:
+
+> "Oi, [nome]! Passando para saber como você está depois da consulta de ontem. Ficou alguma dúvida
+> sobre as orientações, ou tem algo em que possamos ajudar?"
+
+É simples, mas comunica três coisas: *lembro de você*, *estou acompanhando*, *você não virou
+apenas mais um atendimento*. Também é onde aparecem cedo os problemas de adesão — quem não
+entendeu a orientação costuma dizer isso aqui, não no retorno de 30 dias.
+
+**Onde entra.** `src/core/reminders.js` ganha `kind: 'pos_consulta'`, agendado quando a recepção
+marca **compareceu** no painel (`POST /api/bookings/:id/status`), com vencimento em D+1 — no mesmo
+lugar onde hoje nasce o lembrete de retorno. Texto novo em `src/core/messages.js`. No painel, entra
+na fila de lembretes como os outros.
+
+**Esforço.** Pequeno: o gancho do `compareceu` já existe e já dispara um lembrete.
+
+**Cuidado.** Esta mensagem **convida a dúvida clínica** — é o objetivo dela. O bot não pode
+responder nenhuma: a resposta do paciente tem que cair na fila da recepção (o
+`semConselhoMedico` + handoff já fazem isso, mas vale um teste específico para esse caminho).
+E a pergunta deve ser sobre *dúvidas nas orientações*, nunca "como estão seus sintomas?" — evita
+transformar o WhatsApp em prontuário.
+
+---
+
+## 8. Toque no meio da espera, com utilidade no lugar de cobrança
+
+**Ideia.** O paciente marca na terça uma consulta da semana seguinte, e nesse intervalo ninguém
+fala com ele. Ele esfria — aparece uma reunião, um imprevisto, e a consulta é a primeira coisa que
+sai da agenda dele. O que segura é uma mensagem no meio da espera **com utilidade**:
+
+> "[Nome], conferimos que você tem um agendamento no dia [X]. Se tiver algum exame recente, pode
+> levar no dia — a Dra. já avalia e adianta o plano de tratamento."
+
+Quem recebe informação útil antes chega sentindo que a consulta já começou.
+
+**Onde entra.** Duas partes:
+
+1. **O texto.** `src/core/messages.js` → `lembreteConsulta(...)`, ramo dos 15/7 dias. Hoje ele diz
+   *"Faltam N dias para a sua consulta. Está tudo certo para você?"* — que é exatamente a cobrança
+   que o story descreve. Trocar pela versão útil (levar exames recentes, o preparo do tipo de
+   atendimento, o que adianta a consulta).
+2. **O momento.** Em vez de só 15/7 dias fixos, calcular o **meio da espera**
+   (`created + (startsAt - created) / 2`) em `scheduleBookingReminders`, disparando esse toque
+   quando o intervalo entre a marcação e a consulta passar de ~4 dias. Assim quem marca com 9 dias
+   de antecedência também recebe um toque no meio, não só a véspera.
+
+**Esforço.** Pequeno para o texto (item 1 da lista acima), médio para o cálculo do meio da espera.
+
+**Por que vale.** É o buraco mais comum da agenda: a consulta marcada com folga é justamente a que
+some. O código já guarda `createdAt` e `startsAt` — falta usar os dois juntos.
