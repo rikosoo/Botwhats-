@@ -96,7 +96,7 @@ class Bot {
     if (intencao === 'agradecimento') return [M.despedida(contato)];
     if (intencao === 'sim') return this.iniciarAgendamento(contato);
     if (intencao === 'nao') return ['Sem problema! Estou por aqui se precisar. 🙂'];
-    if (this.pareceDuvidaClinica(body)) return [M.semConselhoMedico()];
+    if (this.pareceDuvidaClinica(body)) return this.duvidaClinica(contato);
 
     return this.naoEntendi(contato);
   }
@@ -114,6 +114,30 @@ class Bot {
       case 'agendar_confirmar': return this.tratarConfirmacao(contato, body, intencao);
       default: return null;
     }
+  }
+
+  /**
+   * Dúvida clínica: o bot nunca responde. Quem já foi atendido recentemente vai
+   * para a fila da recepção — é a resposta ao check-in do dia seguinte, e ela
+   * não pode morrer numa mensagem automática.
+   */
+  duvidaClinica(contato) {
+    if (this.consultouRecentemente(contato)) {
+      contato.stage = 'atendimento humano';
+      contato.state = { step: 'atendente', data: {} };
+      this.store.addNote(contato.id, 'Dúvida após a consulta — aguarda retorno da equipe');
+      this.store.logEvent('handoff', `${contato.name || contato.phone} mandou dúvida após a consulta`);
+      return [M.duvidaPosConsulta(this.clinic)];
+    }
+    return [M.semConselhoMedico()];
+  }
+
+  /** Esteve na consulta nos últimos dias? */
+  consultouRecentemente(contato, dias = 15) {
+    const limite = Date.now() - dias * 86400000;
+    return this.store.bookingsOf(contato.id).some(
+      (b) => b.attendance === 'compareceu' && new Date(b.startsAt).getTime() >= limite,
+    );
   }
 
   /** Perguntas do tipo "posso tomar", "é normal sentir" — o bot não responde, encaminha. */

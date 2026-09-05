@@ -341,3 +341,31 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 }
 .bar { height: 6px; background: var(--bg-soft); border-radius: 999px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--accent); }
+
+/* ---------- indicadores ---------- */
+
+.metric {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px;
+  background: var(--card-2); margin-bottom: 10px;
+}
+.metric .big { font-size: 30px; font-weight: 750; line-height: 1.1; }
+.metric .big.bom { color: #1a8f5a; }
+.metric .big.atencao { color: #b8860b; }
+.metric .big.ruim { color: #d32f2f; }
+.metric .cap { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+.metric .sub2 { color: var(--muted); font-size: 12.5px; margin-top: 5px; }
+
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.compare .metric { margin: 0; }
+.compare .big { font-size: 22px; }
+
+.mini-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 0; border-bottom: 1px solid var(--line); font-size: 13px;
+}
+.mini-row:last-child { border-bottom: 0; }
+.mini-row .val { font-weight: 700; }
+
+.mini-row .val.bom { color: #1a8f5a; }
+.mini-row .val.atencao { color: #b8860b; }
+.mini-row .val.ruim { color: #d32f2f; }

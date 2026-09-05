@@ -4,6 +4,7 @@ const path = require('path');
 const express = require('express');
 
 const { SEGMENTOS, VARIAVEIS } = require('./core/broadcast');
+const { indicadores } = require('./core/metrics');
 
 function createServer(app) {
   const { store, agenda, reminders, broadcast, channel, config } = app;
@@ -47,6 +48,7 @@ function createServer(app) {
       variables: Object.keys(VARIAVEIS),
       broadcastLimits: { delayMs: config.broadcastDelayMs, max: config.broadcastMaxRecipients },
       dayView: agenda.dayView(hoje),
+      metrics: indicadores(store),
       agendaDays: agenda.nextAvailableDays(7, {
         professionalId: store.clinic.professionals[0] && store.clinic.professionals[0].id,
       }),
@@ -180,7 +182,9 @@ function createServer(app) {
       booking.attendance = attendance;
       if (attendance === 'compareceu') {
         reminders.scheduleReturnReminder(booking);
-        store.logEvent('atendimento', `${contact ? contact.name : ''} compareceu — retorno programado`);
+        const checkIn = reminders.scheduleCheckIn(booking);
+        store.logEvent('atendimento', `${contact ? contact.name : ''} compareceu`
+          + `${checkIn ? ' — check-in de amanhã e retorno programados' : ' — retorno programado'}`);
       }
       if (attendance === 'faltou') {
         reminders.scheduleNoShowReminder(booking);
@@ -260,6 +264,8 @@ function createServer(app) {
   });
 
   // ---------- consultório ----------
+
+  server.get('/api/metrics', (req, res) => res.json(indicadores(store, Number(req.query.dias) || 30)));
 
   server.get('/api/clinic', (req, res) => res.json(store.clinic));
 

@@ -47,10 +47,43 @@ test('lembretes da consulta pulam as janelas que já passaram', () => {
   const app = makeApp();
   const { booking } = marcarConsulta(app, '5511933333333', 'Edu Lima', 8);
   const criados = app.reminders.scheduleBookingReminders(booking);
-  assert.deepStrictEqual(criados.map((r) => r.offsetDays), [7, 1]);
+
+  // Faltando 8 dias cabem os toques de 7 e 1 dia — o de 15 já passou.
+  const antes = criados.filter((r) => r.kind === 'booking');
+  assert.deepStrictEqual(antes.map((r) => r.offsetDays), [7, 1]);
 });
 
-test('lembrete de véspera manda endereço, preparo e pede confirmação', async () => {
+test('consulta marcada com folga ganha um toque no meio da espera', () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511933333334', 'Nara Dias', 8);
+  const criados = app.reminders.scheduleBookingReminders(booking);
+
+  const espera = criados.find((r) => r.kind === 'espera');
+  assert.ok(espera, 'toque do meio da espera criado');
+  const meio = Date.now() + 4 * DAY_MS;
+  assert.ok(Math.abs(new Date(espera.dueAt).getTime() - meio) < 6 * 3600000, 'cai no meio do caminho');
+});
+
+test('consulta marcada em cima da hora não ganha o toque do meio', () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511933333335', 'Otto Reis', 2);
+  const criados = app.reminders.scheduleBookingReminders(booking);
+  assert.strictEqual(criados.filter((r) => r.kind === 'espera').length, 0);
+});
+
+test('o toque do meio da espera oferece utilidade, não cobrança', async () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511933333336', 'Paula Nunes', 10);
+  app.reminders.scheduleBookingReminders(booking);
+
+  await app.reminders.tick(new Date(Date.now() + 6 * DAY_MS));
+  const texto = app.textoEnviado();
+  assert.match(texto, /exames recentes/i);
+  assert.match(texto, /adianta o plano de tratamento/i);
+  assert.doesNotMatch(texto, /Está tudo certo para você\?/);
+});
+
+test('véspera mostra o tempo reservado e abre a porta de saída', async () => {
   const app = makeApp();
   const { booking } = marcarConsulta(app, '5511944444444', 'Fábio Reis', 1.5);
   app.reminders.scheduleBookingReminders(booking);
@@ -58,10 +91,33 @@ test('lembrete de véspera manda endereço, preparo e pede confirmação', async
   const enviados = await app.reminders.tick(new Date(Date.now() + DAY_MS));
   assert.strictEqual(enviados, 1);
   const texto = app.ultima();
+
+  assert.match(texto, /reservou 40 minutos só para você/, 'mostra o que foi reservado');
+  assert.match(texto, /não conseguir vir/, 'dá permissão para desmarcar');
+  assert.match(texto, /oferecer essa vaga para outra pessoa/, 'explica por que avisar ajuda');
+  assert.doesNotMatch(texto, /confirma\?/i, 'não é pergunta de sim ou não');
   assert.match(texto, /Rua das Flores/);
   assert.match(texto, /exames anteriores/);
-  assert.match(texto, /confirmar/i);
   assert.strictEqual(app.store.getBooking(booking.id).confirmation, 'pedido');
+});
+
+test('check-in do dia seguinte só vale para quem compareceu', async () => {
+  const app = makeApp();
+  const { booking } = marcarConsulta(app, '5511944444445', 'Célia Prado', 0.2);
+  const checkIn = app.reminders.scheduleCheckIn(booking);
+  assert.strictEqual(checkIn.kind, 'pos_consulta');
+
+  // Sem presença registrada, o check-in não sai.
+  assert.strictEqual(await app.reminders.tick(new Date(Date.now() + 2 * DAY_MS)), 0);
+
+  const outro = marcarConsulta(app, '5511944444446', 'Diego Melo', 0.2);
+  outro.booking.attendance = 'compareceu';
+  app.reminders.scheduleCheckIn(outro.booking);
+  await app.reminders.tick(new Date(Date.now() + 2 * DAY_MS));
+
+  assert.match(app.ultima(), /depois da consulta de ontem/i);
+  assert.match(app.ultima(), /dúvida sobre as orientações/i);
+  assert.doesNotMatch(app.ultima(), /sintoma/i, 'não pergunta sobre sintomas');
 });
 
 test('follow-up não é enviado para quem já marcou nesse meio tempo', async () => {

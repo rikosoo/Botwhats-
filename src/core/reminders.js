@@ -36,7 +36,10 @@ class Reminders {
     }));
   }
 
-  /** Lembretes da consulta: 15, 7 e 1 dia antes (o de 1 dia pede confirmação). */
+  /**
+   * Lembretes da consulta: 15, 7 e 1 dia antes (o de 1 dia pede confirmação),
+   * mais um toque no meio da espera quando a consulta foi marcada com folga.
+   */
   scheduleBookingReminders(booking, now = new Date()) {
     const startsAt = new Date(booking.startsAt).getTime();
     const criados = [];
@@ -51,7 +54,53 @@ class Reminders {
         dueAt: new Date(dueAt).toISOString(),
       }));
     }
+
+    const espera = this.esperaNoMeio(booking, criados, now);
+    if (espera) criados.push(espera);
     return criados;
+  }
+
+  /**
+   * Consulta marcada com folga é a que mais some da agenda do paciente: ele
+   * marca e passa dias sem notícia. Este toque cai no meio do caminho entre a
+   * marcação e a consulta — desde que não esbarre em outro lembrete já previsto.
+   */
+  esperaNoMeio(booking, jaCriados, now = new Date()) {
+    const inicio = new Date(booking.createdAt || now).getTime();
+    const startsAt = new Date(booking.startsAt).getTime();
+    const espera = startsAt - inicio;
+    if (espera < (this.config.waitTouchMinDays || 4) * DAY_MS) return null;
+
+    const meio = inicio + espera / 2;
+    // Longe demais da consulta não faz sentido; perto demais vira eco da véspera.
+    if (meio <= now.getTime() + 12 * 3600000) return null;
+    if (meio >= startsAt - 1.5 * DAY_MS) return null;
+    const colide = jaCriados.some((r) => Math.abs(new Date(r.dueAt).getTime() - meio) < 12 * 3600000);
+    if (colide) return null;
+
+    return this.store.addReminder({
+      contactId: booking.contactId,
+      bookingId: booking.id,
+      kind: 'espera',
+      offsetDays: Math.max(1, Math.round((startsAt - meio) / DAY_MS)),
+      dueAt: new Date(meio).toISOString(),
+    });
+  }
+
+  /**
+   * Check-in no dia seguinte à consulta, criado quando a recepção marca
+   * comparecimento. Se o momento já passou, não força uma mensagem fora de hora.
+   */
+  scheduleCheckIn(booking, now = new Date()) {
+    const dueAt = new Date(booking.startsAt).getTime() + DAY_MS;
+    if (dueAt <= now.getTime()) return null;
+    return this.store.addReminder({
+      contactId: booking.contactId,
+      bookingId: booking.id,
+      kind: 'pos_consulta',
+      offsetDays: 1,
+      dueAt: new Date(dueAt).toISOString(),
+    });
   }
 
   /** Retorno sugerido depois da consulta (usa returnDays do tipo de atendimento). */
@@ -84,12 +133,15 @@ class Reminders {
     if (!contato) return null;
     if (reminder.text) return reminder.text; // disparo com texto próprio da recepção
 
-    if (reminder.kind === 'booking') {
+    if (reminder.kind === 'booking' || reminder.kind === 'espera') {
       const consulta = this.store.getBooking(reminder.bookingId);
       if (!consulta) return null;
       const service = findService(this.clinic, consulta.serviceId);
-      return M.lembreteConsulta(this.clinic, contato, consulta, reminder.offsetDays, service);
+      return reminder.kind === 'espera'
+        ? M.lembreteEspera(this.clinic, contato, consulta, service)
+        : M.lembreteConsulta(this.clinic, contato, consulta, reminder.offsetDays, service);
     }
+    if (reminder.kind === 'pos_consulta') return M.checkInPosConsulta(this.clinic, contato);
     if (reminder.kind === 'retorno') return M.lembreteRetorno(this.clinic, contato, reminder.offsetDays);
     if (reminder.kind === 'campanha') return null; // sem texto salvo, não inventa mensagem
     if (reminder.kind === 'falta') return M.lembreteFalta(this.clinic, contato);
@@ -104,10 +156,12 @@ class Reminders {
       (b) => b.contactId === contato.id && b.status === 'confirmado' && new Date(b.startsAt) >= new Date(),
     )) return false; // já marcou nesse meio tempo
     if (reminder.kind === 'campanha') return true; // já passou pelas regras do disparo
-    if (reminder.kind === 'booking' || reminder.kind === 'falta') {
+    if (['booking', 'espera', 'falta', 'pos_consulta'].includes(reminder.kind)) {
       const consulta = this.store.getBooking(reminder.bookingId);
       if (!consulta) return false;
-      if (reminder.kind === 'booking' && consulta.status !== 'confirmado') return false;
+      if (['booking', 'espera'].includes(reminder.kind) && consulta.status !== 'confirmado') return false;
+      // O check-in só faz sentido para quem realmente esteve na consulta.
+      if (reminder.kind === 'pos_consulta' && consulta.attendance !== 'compareceu') return false;
     }
     return true;
   }
@@ -158,6 +212,8 @@ class Reminders {
   rotulo(reminder) {
     const dias = reminder.offsetDays === 1 ? '1 dia' : `${reminder.offsetDays} dias`;
     if (reminder.kind === 'booking') return `Lembrete de consulta (${dias} antes)`;
+    if (reminder.kind === 'espera') return 'Toque no meio da espera';
+    if (reminder.kind === 'pos_consulta') return 'Check-in do dia seguinte';
     if (reminder.kind === 'retorno') return `Lembrete de retorno (${dias})`;
     if (reminder.kind === 'falta') return 'Mensagem de falta';
     if (reminder.kind === 'campanha') return 'Disparo da recepção';

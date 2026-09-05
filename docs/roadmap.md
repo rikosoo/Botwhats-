@@ -3,11 +3,13 @@
 Anotações vindas de conteúdo sobre captação e follow-up em consultório, traduzidas para onde
 cada uma encaixa neste código. Nada aqui está implementado ainda.
 
-Ordem sugerida: 1 → 8 → 7 → 6 → 2 → 4 → 5 → 3 (do mais barato e mais útil para o mais trabalhoso).
+**Feito:** 1, 6, 7 e 8. **Na fila:** 2 → 4 → 5 → 3.
 
 ---
 
 ## 1. Confirmação que mostra o que foi reservado, em vez de "confirma?"
+
+> ✅ **Implementado.**
 
 **Ideia.** Perguntar "confirma?" faz o paciente responder "confirmo" no automático, sem abrir a
 agenda dele. O que funciona é mostrar o que foi reservado **e abrir a porta de saída**:
@@ -100,6 +102,8 @@ convite genérico. Passa a montar a resposta completa a partir de `clinic.servic
 
 ## 6. Taxa de falta no painel
 
+> ✅ **Implementado.**
+
 **Ideia.** A maioria dos consultórios não conhece a própria taxa de falta — e sem o número não dá
 para saber se o follow-up está funcionando.
 
@@ -117,6 +121,8 @@ por toque.
 ---
 
 ## 7. Check-in no dia seguinte à consulta
+
+> ✅ **Implementado.**
 
 **Ideia.** Um dia depois do atendimento, uma mensagem curta:
 
@@ -143,6 +149,8 @@ transformar o WhatsApp em prontuário.
 ---
 
 ## 8. Toque no meio da espera, com utilidade no lugar de cobrança
+
+> ✅ **Implementado.**
 
 **Ideia.** O paciente marca na terça uma consulta da semana seguinte, e nesse intervalo ninguém
 fala com ele. Ele esfria — aparece uma reunião, um imprevisto, e a consulta é a primeira coisa que

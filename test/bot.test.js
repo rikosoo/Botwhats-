@@ -218,3 +218,30 @@ test('urgência e fila humana não recebem follow-up de marketing', async () => 
     0,
   );
 });
+
+test('dúvida depois da consulta vai para a fila da recepção, não para o vazio', async () => {
+  const app = makeApp();
+  const phone = '5511900015555';
+  await app.conversa(phone, AGENDAR);
+
+  // A recepção registra o comparecimento.
+  const consulta = app.store.state.bookings[0];
+  consulta.attendance = 'compareceu';
+  consulta.startsAt = new Date(Date.now() - 86400000).toISOString();
+
+  await app.handleIncoming({ phone, body: 'fiquei com dúvida sobre o remédio que a doutora passou' });
+
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.stage, 'atendimento humano');
+  assert.match(app.ultima(), /passei para a equipe/i);
+  assert.doesNotMatch(app.ultima(), /marque|agendar/i, 'não empurra consulta para quem acabou de ir');
+  assert.ok(app.store.state.events.some((e) => e.type === 'handoff' && /dúvida após a consulta/.test(e.text)));
+});
+
+test('quem ainda não foi atendido recebe a orientação padrão', async () => {
+  const app = makeApp();
+  const phone = '5511900016666';
+  await app.conversa(phone, ['oi', 'posso tomar dipirona antes?']);
+  assert.match(app.ultima(), /pergunta para o médico avaliar/i);
+  assert.strictEqual(app.store.findContactByPhone(phone).stage, 'ativo');
+});

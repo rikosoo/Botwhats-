@@ -41,9 +41,16 @@ São duas frentes, configuráveis em `src/config.js`:
 | Frente | Quando dispara | Conteúdo |
 | --- | --- | --- |
 | **Follow-up** | 1, 7 e 15 dias **depois** do contato de quem não marcou (o relógio reinicia a cada mensagem) | Convite para agendar; o de 15 dias é o último e oferece opt-out |
-| **Antes da consulta** | 15, 7 e **1** dia **antes** | O de véspera manda endereço, o que levar, preparo do exame e **pede confirmação de presença** |
+| **Antes da consulta** | 15, 7 e **1** dia **antes** | A véspera **mostra o tempo reservado** ("a Dra. reservou 40 minutos só para você"), manda endereço e preparo, e **abre a porta de saída** em vez de perguntar "confirma?" |
+| **Meio da espera** | No meio do caminho entre marcar e consultar, quando a folga passa de 4 dias | Utilidade no lugar de cobrança: leve exames recentes, que o médico já adianta o plano |
+| **Check-in** | Um dia depois da consulta, quando a recepção marca *compareceu* | "Ficou alguma dúvida sobre as orientações?" — a resposta cai na fila da recepção |
 | **Retorno** | Conforme `returnDays` do tipo de atendimento (padrão: 30 dias após a primeira consulta) | Convite para o retorno |
 | **Falta** | Dia seguinte a uma falta marcada no painel | Mensagem de reaproximação, sem cobrança |
+
+Por que a véspera não pergunta "confirma?": o paciente responde "confirmo" no automático, sem abrir
+a agenda dele. Mostrar o que foi reservado e **dar permissão para desmarcar** parece perda, mas é o
+que devolve o horário a tempo de encaixar outra pessoa. E a consulta marcada com folga é a que mais
+some — por isso o toque no meio da espera.
 
 Um lembrete só sai se ainda fizer sentido: quem marcou no meio do caminho não recebe follow-up,
 e consulta cancelada não gera aviso.
@@ -62,7 +69,13 @@ e consulta cancelada não gera aviso.
 - **Conversas**: histórico em bolhas, ficha do paciente (nascimento, convênio, próxima consulta, status da confirmação), envio manual pela recepção e botão para devolver a conversa ao bot.
 - **Simulador**: testa o atendimento inteiro sem conectar o WhatsApp — inclusive o caminho da urgência.
 - **Lembretes**: fila do que vai sair, com *enviar agora* e *cancelar*.
+- **Números** (abaixo): taxa de falta dos últimos 30 dias, geral e por profissional, e o comparativo
+  **confirmou × não confirmou** — que mostra em pontos percentuais quanto o lembrete de véspera
+  está segurando de falta. Consultas que passaram sem ninguém marcar presença aparecem à parte e
+  ficam fora da conta, em vez de virar "compareceu" por omissão.
 - **Ajustes**: dados do consultório, convênios, valores, o que levar e a agenda de cada profissional — tudo editável sem mexer no código.
+
+![aba de números](docs/numeros.png)
 
 ## Disparo de mensagens da recepção
 
@@ -153,6 +166,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
+| `WAIT_TOUCH_MIN_DAYS` | `4` | Folga mínima entre marcar e consultar para valer o toque do meio |
 | `BROADCAST_DELAY_MS` | `2500` | Intervalo entre as mensagens de um disparo |
 | `BROADCAST_MAX` | `200` | Teto de destinatários por disparo |
 | `CHROMIUM_PATH` | — | Caminho do Chromium, se o Puppeteer não achar sozinho |
@@ -175,6 +189,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `DELETE` | `/api/bookings/:id` | Cancela consulta e seus lembretes |
 | `POST` | `/api/reminders/:id/send` | Antecipa um lembrete |
 | `DELETE` | `/api/reminders/:id` | Cancela um lembrete |
+| `GET` | `/api/metrics?dias=30` | Taxa de falta geral, por profissional e por confirmação |
 | `GET` | `/api/segments/:id` | Quem está no segmento (id, nome, telefone, situação) |
 | `POST` | `/api/broadcast/preview` | Prévia: quantos recebem, quem fica de fora, texto preenchido |
 | `POST` | `/api/broadcast` | Dispara agora ou agenda (`{contactIds, body, scheduledAt}`) |
@@ -198,11 +213,12 @@ src/
   core/triage.js      sinais de alarme
   core/agenda.js      fuso, grade de horários, reservas por profissional
   core/broadcast.js   segmentos, variáveis e disparo espaçado
+  core/metrics.js     taxa de falta e efeito da confirmação
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 46 testes com node:test
+test/                 57 testes com node:test
 ```
 
 ## Testes
@@ -214,14 +230,17 @@ npm test
 Cobrem a triagem de urgência, o entendimento de linguagem natural, a grade de horários por
 profissional e duração, as quatro famílias de lembrete, a conversa inteira de agendamento,
 remarcação, cancelamento e handoff, e o disparo — segmentação, variáveis, exclusão de opt-out
-e de números repetidos, teto por disparo e envio agendado.
+e de números repetidos, teto por disparo e envio agendado. Também a régua de lembretes nova — o
+toque do meio da espera, o check-in do dia seguinte, o encaminhamento da dúvida pós-consulta para
+a recepção — e o cálculo da taxa de falta, incluindo o caso em que a presença não foi registrada.
 
 ## Próximos passos
 
-As ideias já mapeadas para as próximas versões — confirmação que mostra o horário reservado,
-toque no meio da espera com utilidade no lugar de cobrança, check-in no dia seguinte à consulta,
-taxa de falta no painel, régua de follow-up com propósito por toque e escassez calculada da agenda
-— estão em [`docs/roadmap.md`](docs/roadmap.md), cada uma com o ponto do código onde entra.
+Quatro itens do backlog já entraram: confirmação que mostra o horário reservado, toque no meio da
+espera, check-in do dia seguinte e taxa de falta no painel. O que falta — régua de follow-up com
+propósito por toque, escassez calculada da agenda, resposta completa de preço com dois horários e
+biblioteca de conteúdo por tema — está em [`docs/roadmap.md`](docs/roadmap.md), cada um com o
+ponto do código onde entra.
 
 ## Avisos
 

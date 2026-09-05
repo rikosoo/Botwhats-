@@ -97,6 +97,7 @@ function render() {
   renderAgenda();
   renderReminders();
   renderDisparo();
+  renderNumeros();
   renderActivity();
   renderConfig();
 }
@@ -111,8 +112,11 @@ function renderKpis() {
   const urgentes = d.contacts.filter((c) => c.priority === 'urgente');
   const humanos = d.contacts.filter((c) => c.stage === 'atendimento humano');
 
+  const falta = d.metrics ? d.metrics.geral : null;
   const kpis = [
     ['Consultas hoje', hojeConsultas.length, ''],
+    ['Taxa de falta (30d)', falta && falta.registradas ? `${falta.taxaFalta}%` : '—',
+      falta && falta.taxaFalta >= 20 ? 'danger' : falta && falta.taxaFalta >= 10 ? 'warn' : ''],
     ['Aguardando confirmação', aguardando.length, aguardando.length ? 'warn' : ''],
     ['Na fila da recepção', humanos.length, humanos.length ? 'warn' : ''],
     ['Urgências', urgentes.length, urgentes.length ? 'danger' : ''],
@@ -759,6 +763,106 @@ async function dispararAgora() {
   } catch (err) {
     toast(err.message);
   }
+}
+
+/** Cor do número conforme a faixa: abaixo de 10% de falta é bom, acima de 20% acende. */
+function tomDaFalta(taxa) {
+  if (taxa >= 20) return 'ruim';
+  if (taxa >= 10) return 'atencao';
+  return 'bom';
+}
+
+function blocoMetrica(rotulo, valor, tom, detalhe) {
+  const box = el('div', 'metric');
+  box.append(el('div', 'cap', rotulo));
+  box.append(el('div', `big ${tom || ''}`, valor));
+  if (detalhe) box.append(el('div', 'sub2', detalhe));
+  return box;
+}
+
+/** Aba Números: taxa de falta e o efeito da confirmação. */
+function renderNumeros() {
+  const panel = $('#tab-numeros');
+  if (!panel) return;
+  panel.innerHTML = '';
+  const m = state.data.metrics;
+  if (!m) return;
+
+  panel.append(el('div', 'day-title', `Últimos ${m.dias} dias`));
+
+  if (!m.geral.registradas) {
+    panel.append(el('div', 'empty',
+      'Ainda não há presença registrada. Marque "Compareceu" ou "Faltou" na aba Hoje '
+      + 'e a taxa de falta aparece aqui.'));
+    return;
+  }
+
+  panel.append(blocoMetrica(
+    'Taxa de falta',
+    `${m.geral.taxaFalta}%`,
+    tomDaFalta(m.geral.taxaFalta),
+    `${m.geral.faltaram} falta(s) em ${m.geral.registradas} consulta(s) com presença registrada`,
+  ));
+
+  if (m.geral.semRegistro) {
+    panel.append(el('div', 'warn-note',
+      `${m.geral.semRegistro} consulta(s) já passaram sem ninguém marcar presença. `
+      + 'Elas ficam de fora da conta — a taxa vale o que vale o registro.'));
+  }
+
+  // O número que diz se o lembrete de véspera está pagando o próprio trabalho.
+  panel.append(el('div', 'day-title', 'Confirmou × não confirmou'));
+  const comparativo = el('div', 'compare');
+  comparativo.append(blocoMetrica(
+    'Confirmaram',
+    `${m.confirmacao.confirmadas.taxaFalta}%`,
+    tomDaFalta(m.confirmacao.confirmadas.taxaFalta),
+    `${m.confirmacao.confirmadas.registradas} consulta(s)`,
+  ));
+  comparativo.append(blocoMetrica(
+    'Não confirmaram',
+    `${m.confirmacao.naoConfirmadas.taxaFalta}%`,
+    tomDaFalta(m.confirmacao.naoConfirmadas.taxaFalta),
+    `${m.confirmacao.naoConfirmadas.registradas} consulta(s)`,
+  ));
+  panel.append(comparativo);
+
+  if (m.confirmacao.confirmadas.registradas && m.confirmacao.naoConfirmadas.registradas) {
+    const dif = m.confirmacao.diferenca;
+    panel.append(el('div', 'desc', dif > 0
+      ? `Quem confirma falta ${dif} ponto(s) percentual(is) menos. O lembrete de véspera está funcionando.`
+      : 'Ainda não dá para ver diferença entre quem confirma e quem não confirma.'));
+  }
+
+  if (m.porProfissional.length) {
+    panel.append(el('div', 'day-title', 'Por profissional'));
+    const box = el('div', 'item');
+    for (const p of m.porProfissional) {
+      const linha = el('div', 'mini-row');
+      linha.append(el('span', null, p.name));
+      const val = el('span', `val ${tomDaFalta(p.taxaFalta)}`,
+        p.registradas ? `${p.taxaFalta}%` : '—');
+      val.title = `${p.faltaram} falta(s) em ${p.registradas} registro(s)`;
+      linha.append(val);
+      box.append(linha);
+    }
+    panel.append(box);
+  }
+
+  panel.append(el('div', 'day-title', 'Movimento'));
+  const mov = el('div', 'item');
+  for (const [rotulo, valor] of [
+    ['Consultas no período', m.geral.total],
+    ['Compareceram', m.geral.compareceram],
+    ['Faltaram', m.geral.faltaram],
+    ['Canceladas', m.canceladas],
+  ]) {
+    const linha = el('div', 'mini-row');
+    linha.append(el('span', null, rotulo));
+    linha.append(el('span', 'val', String(valor)));
+    mov.append(linha);
+  }
+  panel.append(mov);
 }
 
 function renderActivity() {

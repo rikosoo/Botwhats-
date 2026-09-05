@@ -76,6 +76,16 @@ const M = {
       + `Quer que eu já veja o horário mais próximo com ${clinic.professionals[0].name}?`;
   },
 
+  /**
+   * Dúvida de quem acabou de ser atendido. Aqui não cabe "marque uma consulta":
+   * a pessoa já foi. O caminho é a equipe, e ela precisa saber disso.
+   */
+  duvidaPosConsulta(clinic) {
+    return 'Anotei sua dúvida e já passei para a equipe do consultório — alguém te responde por aqui. 💛\n\n'
+      + 'Eu não consigo avaliar orientação de tratamento por mensagem, mas a equipe consegue. '
+      + `Se for algo urgente, ligue para ${clinic.phone} ou procure um pronto-socorro.`;
+  },
+
   semConselhoMedico() {
     return 'Essa é uma pergunta para o médico avaliar com você na consulta — por aqui eu cuido só do agendamento, tudo bem? '
       + 'Quer que eu procure um horário?';
@@ -270,21 +280,69 @@ const M = {
       + 'Se preferir não receber mais mensagens, responda "sair".';
   },
 
+  /**
+   * Véspera. Não pergunta "confirma?" — mostra o que foi reservado e abre a
+   * porta de saída de propósito: quem avisa que não vem devolve o horário a
+   * tempo de encaixar outra pessoa.
+   */
   lembreteConsulta(clinic, contato, booking, dias, service) {
     const nome = primeiroNome(contato) || 'tudo bem';
-    const quando = `${formatDateLong(booking.date)} às ${booking.start}`;
+    const duracao = service ? service.durationMin : null;
+    const reserva = duracao
+      ? `${booking.professionalName} reservou ${duracao} minutos só para você`
+      : `${booking.professionalName} separou um horário para você`;
+
     if (dias === 1) {
       const partes = [
-        `Oi, ${nome}! Sua consulta é amanhã, ${quando}, com ${booking.professionalName}.`,
+        `Oi, ${nome}! Amanhã às ${booking.start} ${reserva}.`,
+        '',
         `📍 ${clinic.address}`,
         `Chegue ${clinic.policies.arriveMinutes} min antes e traga ${clinic.documents.slice(0, 2).join(' e ')}.`,
       ];
       if (service && service.prep) partes.push(`📋 ${service.prep}`);
-      partes.push('', 'Você confirma sua presença? Responda *confirmar*, ou *remarcar* se precisar mudar.');
+      partes.push(
+        '',
+        'Se por algum motivo você não conseguir vir, me avisa que a gente encontra um horário melhor '
+        + '— assim eu consigo oferecer essa vaga para outra pessoa.',
+        'Se estiver tudo certo, é só responder *confirmo*. 🙂',
+      );
       return partes.join('\n');
     }
-    return `Oi, ${nome}! Faltam ${dias} dias para a sua consulta em ${quando}, com ${booking.professionalName}. `
-      + 'Está tudo certo para você? Se precisar mudar, me avisa que eu remarco.';
+
+    // Demais toques antes da consulta: utilidade, não cobrança.
+    return M.lembreteEspera(clinic, contato, booking, service, `Faltam ${dias} dias`);
+  },
+
+  /**
+   * Toque no meio da espera. Serve para a consulta não esfriar na agenda do
+   * paciente — e entrega algo que adianta o atendimento, em vez de cobrar
+   * uma confirmação que ele já deu.
+   */
+  lembreteEspera(clinic, contato, booking, service, abertura = null) {
+    const nome = primeiroNome(contato) || 'tudo bem';
+    const quando = `${formatDateLong(booking.date)} às ${booking.start}`;
+    const partes = [
+      abertura
+        ? `Oi, ${nome}! ${abertura} para a sua consulta: ${quando}, com ${booking.professionalName}.`
+        : `Oi, ${nome}! Passando para confirmar que está tudo certo com a sua consulta de ${quando}, com ${booking.professionalName}.`,
+      '',
+      'Se você tiver exames recentes, pode levar no dia — assim '
+      + `${booking.professionalName} já avalia tudo e adianta o plano de tratamento.`,
+    ];
+    if (service && service.prep) partes.push(`📋 ${service.prep}`);
+    partes.push('', 'Qualquer imprevisto, me avisa por aqui que eu remarco. 🙂');
+    return partes.join('\n');
+  },
+
+  /**
+   * Um dia depois da consulta. Não pergunta sobre sintomas: pergunta se
+   * ficou dúvida nas orientações — e o que vier cai na fila da recepção.
+   */
+  checkInPosConsulta(clinic, contato) {
+    const nome = primeiroNome(contato) || 'tudo bem';
+    return `Oi, ${nome}! Passando para saber como você está depois da consulta de ontem. 💛\n\n`
+      + 'Ficou alguma dúvida sobre as orientações, ou tem algo em que a gente possa ajudar? '
+      + 'Pode escrever por aqui que eu levo para a equipe.';
   },
 
   lembreteRetorno(clinic, contato, dias) {

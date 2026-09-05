@@ -39,6 +39,8 @@ const config = {
   followUpOffsets: [1, 7, 15],
   // Lembretes da consulta: dias antes do horario marcado (o de 1 dia pede confirmacao).
   bookingOffsets: [15, 7, 1],
+  // Espera minima (dias) entre marcar e consultar para valer um toque no meio do caminho.
+  waitTouchMinDays: Number(process.env.WAIT_TOUCH_MIN_DAYS || 4),
 };
 
 module.exports = config;
