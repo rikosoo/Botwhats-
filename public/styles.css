@@ -387,3 +387,6 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 
 .conv-add { display: flex; gap: 6px; }
 .conv-add input { flex: 1; }
+
+.bubble.media { font-style: italic; opacity: .95; }
+.bubble.media .media-tag { font-style: normal; font-weight: 600; }

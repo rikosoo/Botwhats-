@@ -91,6 +91,8 @@ class Agenda {
   constructor(store, config) {
     this.store = store;
     this.config = config;
+    // Preenchido pelo app: chamado quando um horário volta para a agenda.
+    this.onSlotFreed = null;
   }
 
   get clinic() {
@@ -227,6 +229,7 @@ class Agenda {
     if (motivo) booking.cancelReason = motivo;
     this.store.cancelReminders((r) => r.bookingId === bookingId);
     this.store.commit('booking', booking);
+    if (this.onSlotFreed) this.onSlotFreed(booking);
     return booking;
   }
 

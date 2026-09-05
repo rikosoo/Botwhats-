@@ -5,6 +5,7 @@ const { Agenda } = require('./core/agenda');
 const { Reminders } = require('./core/reminders');
 const { Bot } = require('./core/bot');
 const { Broadcast } = require('./core/broadcast');
+const { Waitlist } = require('./core/waitlist');
 const { MockChannel } = require('./channels/mock');
 const { WhatsAppWebChannel } = require('./channels/whatsappWeb');
 
@@ -38,16 +39,27 @@ function createApp(config, { channel } = {}) {
   const reminders = new Reminders(store, config, sendText);
   const bot = new Bot(store, agenda, reminders, config);
   const broadcast = new Broadcast(store, agenda, config, sendText);
+  const waitlist = new Waitlist(store, agenda, config, sendText);
+  bot.waitlist = waitlist;
 
-  const handleIncoming = async ({ phone, name, body }) => {
-    const replies = await bot.handleIncoming({ phone, name, body });
+  // Horário desmarcado é vaga: quem está esperando ouve primeiro.
+  agenda.onSlotFreed = (booking) => {
+    waitlist.emAndamento = waitlist.oferecerVaga(waitlist.vagaDe(booking))
+      .catch((err) => console.error('[espera]', err));
+  };
+
+  const handleIncoming = async ({ phone, name, body, mediaType = null }) => {
+    const replies = await bot.handleIncoming({ phone, name, body, mediaType });
     for (const reply of replies) await sendText(phone, reply);
     return replies;
   };
 
   chan.onMessage = handleIncoming;
 
-  return { config, store, agenda, reminders, bot, broadcast, channel: chan, sendText, handleIncoming };
+  return {
+    config, store, agenda, reminders, bot, broadcast, waitlist,
+    channel: chan, sendText, handleIncoming,
+  };
 }
 
 module.exports = { createApp, createChannel };

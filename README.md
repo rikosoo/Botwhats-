@@ -19,6 +19,40 @@ O bot conversa como a recepção conversaria — não como uma URA.
 | Mandar tudo de uma vez | Pausa entre mensagens proporcional ao tamanho do texto, como alguém digitando |
 | Chutar | *"8h"* com 08:00 e 08:20 livres vira *"tenho 08:00 e 08:20, qual delas?"* |
 
+## Lista de espera e encaixe
+
+Quando não há horário livre, o bot não encerra a conversa: oferece a fila. E quando um horário
+volta para a agenda — cancelamento pelo paciente ou pela recepção — a vaga é oferecida
+automaticamente:
+
+1. **Uma pessoa de cada vez**, por ordem de chegada. Oferecer para todo mundo junto cria corrida e
+   frustra quem responde em segundo lugar.
+2. **Com prazo** (padrão: 2 horas). Sem resposta, quem perdeu recebe um aviso — *"a vaga acabou
+   indo para outra pessoa, você continua na lista"* — e o horário segue para o próximo da fila.
+3. **Responder "sim" reserva na hora**, pedindo só o que faltar no cadastro. Responder "não"
+   mantém o nome na fila e passa a vaga adiante.
+
+Fica de fora automaticamente quem já conseguiu marcar no meio tempo, quem pediu para não receber
+mensagens, e quem pediu para sair da lista. A fila aparece na aba **Agenda** do painel, com a
+posição de cada um e o prazo da oferta em aberto.
+
+![lista de espera](docs/espera.png)
+
+## Áudio, foto e documento
+
+O paciente responder com áudio é a coisa mais comum do WhatsApp — e antes disso o bot ignorava em
+silêncio, o que o paciente lê como descaso do consultório. Agora:
+
+- **áudio** → *"recebi seu áudio, mas por aqui só consigo ler mensagens escritas; já avisei a
+  recepção"*, e a conversa vai para a fila humana;
+- **foto e documento** → confirma o recebimento, encaminha para a recepção e lembra que exame e
+  laudo são assunto de consulta, não de WhatsApp;
+- **figurinha** → responde sem ocupar a recepção.
+
+O conteúdo da mídia **não é baixado nem armazenado** — áudio e imagem de paciente podem carregar
+dado clínico, e o consultório não precisa de cópia disso no servidor. Fica registrado só o tipo, e
+a recepção abre a mensagem no WhatsApp.
+
 ## Convênios
 
 Na aba **Ajustes** do painel dá para:
@@ -205,6 +239,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
+| `WAITLIST_OFFER_MINUTES` | `120` | Prazo para responder a uma vaga oferecida |
 | `WAIT_TOUCH_MIN_DAYS` | `10` | Silêncio mínimo entre marcar e o primeiro lembrete para valer o toque do meio |
 | `BROADCAST_DELAY_MS` | `2500` | Intervalo entre as mensagens de um disparo |
 | `BROADCAST_MAX` | `200` | Teto de destinatários por disparo |
@@ -228,6 +263,8 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `DELETE` | `/api/bookings/:id` | Cancela consulta e seus lembretes |
 | `POST` | `/api/reminders/:id/send` | Antecipa um lembrete |
 | `DELETE` | `/api/reminders/:id` | Cancela um lembrete |
+| `POST` | `/api/waitlist` | Coloca um paciente na lista de espera |
+| `DELETE` | `/api/waitlist/:id` | Tira o nome da lista |
 | `GET` | `/api/metrics?dias=30` | Taxa de falta geral, por profissional e por confirmação |
 | `GET` | `/api/segments/:id` | Quem está no segmento (id, nome, telefone, situação) |
 | `POST` | `/api/broadcast/preview` | Prévia: quantos recebem, quem fica de fora, texto preenchido |
@@ -253,11 +290,12 @@ src/
   core/agenda.js      fuso, grade de horários, reservas por profissional
   core/broadcast.js   segmentos, variáveis e disparo espaçado
   core/metrics.js     taxa de falta e efeito da confirmação
+  core/waitlist.js    fila de espera e oferta automática de vaga
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 69 testes com node:test
+test/                 81 testes com node:test
 ```
 
 ## Testes

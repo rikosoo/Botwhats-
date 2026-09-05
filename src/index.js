@@ -9,6 +9,7 @@ async function main() {
   const { server } = createServer(app);
 
   app.reminders.start();
+  app.waitlist.start();
 
   server.listen(config.port, () => {
     const clinica = app.store.clinic;
@@ -27,6 +28,7 @@ async function main() {
 
   const shutdown = async () => {
     app.reminders.stop();
+    app.waitlist.stop();
     app.store.saveNow();
     try { await app.channel.stop(); } catch { /* ignora */ }
     process.exit(0);

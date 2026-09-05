@@ -352,3 +352,43 @@ test('no modo particular a pergunta de convênio é respondida direto', async ()
   assert.match(app.ultima(), /apenas em regime particular/i);
   assert.match(app.ultima(), /R\$ 400/);
 });
+
+test('áudio não cai no vazio: responde e chama a recepção', async () => {
+  const app = makeApp();
+  const phone = '5511900026666';
+  await app.conversa(phone, ['oi']);
+  app.sent.length = 0;
+
+  await app.handleIncoming({ phone, body: '', mediaType: 'audio' });
+
+  assert.match(app.ultima(), /só consigo ler mensagens escritas/i);
+  assert.match(app.ultima(), /recepção/i);
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.stage, 'atendimento humano');
+  assert.ok(app.store.state.events.some((e) => e.type === 'midia' && /audio/.test(e.text)));
+
+  // A mensagem fica no histórico marcada como mídia, sem guardar o conteúdo.
+  const registro = app.store.messagesOf(paciente.id).slice(-2)[0];
+  assert.strictEqual(registro.meta.mediaType, 'audio');
+  assert.strictEqual(registro.body, '[audio]');
+});
+
+test('foto avisa para não mandar exame por mensagem', async () => {
+  const app = makeApp();
+  const phone = '5511900027777';
+  await app.conversa(phone, ['oi']);
+  await app.handleIncoming({ phone, body: '', mediaType: 'imagem' });
+
+  assert.match(app.ultima(), /encaminhei para a recepção/i);
+  assert.match(app.ultima(), /evite mandar exames/i);
+});
+
+test('figurinha não ocupa a recepção', async () => {
+  const app = makeApp();
+  const phone = '5511900028888';
+  await app.conversa(phone, ['oi']);
+  await app.handleIncoming({ phone, body: '', mediaType: 'figurinha' });
+
+  assert.match(app.ultima(), /Recebi!/);
+  assert.notStrictEqual(app.store.findContactByPhone(phone).stage, 'atendimento humano');
+});

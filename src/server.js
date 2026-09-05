@@ -8,7 +8,7 @@ const { indicadores } = require('./core/metrics');
 const { normalizarConvenios, conveniosAtivos } = require('./clinic');
 
 function createServer(app) {
-  const { store, agenda, reminders, broadcast, channel, config } = app;
+  const { store, agenda, reminders, broadcast, waitlist, channel, config } = app;
   const server = express();
   server.use(express.json());
   server.use(express.static(path.join(__dirname, '..', 'public')));
@@ -49,6 +49,9 @@ function createServer(app) {
       variables: Object.keys(VARIAVEIS),
       broadcastLimits: { delayMs: config.broadcastDelayMs, max: config.broadcastMaxRecipients },
       dayView: agenda.dayView(hoje),
+      waitlist: store.state.waitlist
+        .filter((e) => ['aguardando', 'oferecido'].includes(e.status))
+        .map((e, i) => ({ ...e, posicao: i + 1 })),
       metrics: indicadores(store),
       agendaDays: agenda.nextAvailableDays(7, {
         professionalId: store.clinic.professionals[0] && store.clinic.professionals[0].id,
@@ -72,11 +75,14 @@ function createServer(app) {
 
   // Simulador: injeta uma mensagem como se tivesse chegado do WhatsApp.
   server.post('/api/simulate', async (req, res) => {
-    const { phone, name, body } = req.body || {};
-    if (!phone || !body) return res.status(400).json({ error: 'informe phone e body' });
+    const { phone, name, body, mediaType } = req.body || {};
+    if (!phone || (!body && !mediaType)) return res.status(400).json({ error: 'informe phone e body' });
     try {
       const replies = await app.handleIncoming({
-        phone: String(phone), name: name || null, body: String(body),
+        phone: String(phone),
+        name: name || null,
+        body: String(body || ''),
+        mediaType: mediaType || null,
       });
       return res.json({ replies });
     } catch (err) {
@@ -194,6 +200,22 @@ function createServer(app) {
     }
     store.commit('booking', booking);
     return res.json(booking);
+  });
+
+  // ---------- lista de espera ----------
+
+  server.post('/api/waitlist', (req, res) => {
+    const { contactId, serviceId, professionalId, nota } = req.body || {};
+    const contact = store.getContact(contactId);
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
+    return res.json(waitlist.adicionar(contactId, { serviceId, professionalId, nota }));
+  });
+
+  server.delete('/api/waitlist/:id', (req, res) => {
+    const entrada = waitlist.remover(req.params.id, 'removido');
+    if (!entrada) return res.status(404).json({ error: 'entrada não encontrada' });
+    store.logEvent('espera', 'Nome retirado da lista de espera pela recepção');
+    return res.json(entrada);
   });
 
   // ---------- lembretes ----------

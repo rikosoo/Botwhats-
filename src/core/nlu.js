@@ -22,6 +22,8 @@ const INTENCOES = [
   ['remarcar', [/\b(remarcar|reagendar|mudar (o )?(horario|dia|a data)|trocar (o )?horario|adiar|antecipar)\b/]],
   ['confirmar_presenca', [/\b(confirmar|confirmo|confirmado|vou sim|estarei la|pode confirmar|vou comparecer)\b/]],
   ['agendar', [/\b(agendar|marcar|marca|agenda pra mim|quero uma consulta|preciso de (uma )?consulta|nova consulta|primeira consulta|retorno|consultar|horario com (o|a) (dr|dra)|passar em consulta)\b/]],
+  ['sair_espera', [/\b(tirar meu nome|sair da lista|nao quero mais esperar|me tira da lista)\b/]],
+  ['lista_espera', [/\b(lista de espera|me avisa (se|quando) (abrir|vagar|desmarcar)|fila de espera|avisa se abrir|quero ser avisad)\b/]],
   ['minhas_consultas', [/\b(minha consulta|minhas consultas|meu horario|meus horarios|meu agendamento|quando (e|eh) minha|ja tenho (consulta|horario))\b/]],
   ['horarios', [/\b(horarios? (livres?|disponiveis?|vagos?)|tem vaga|qual (o )?horario|que horas voces? atende|disponibilidade)\b/]],
   ['endereco', [/\b(endereco|onde (fica|voces? fica|e o consultorio)|localizacao|como chego|estacionamento|referencia)\b/]],

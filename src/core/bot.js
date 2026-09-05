@@ -29,12 +29,19 @@ class Bot {
     return this.store.clinic;
   }
 
-  async handleIncoming({ phone, name, body }) {
+  async handleIncoming({ phone, name, body, mediaType = null }) {
     const contato = this.store.upsertContact(phone, name);
     const primeiraVez = this.store.messagesOf(contato.id).length === 0;
-    this.store.addMessage(contato.id, 'in', body);
+    this.store.addMessage(
+      contato.id,
+      'in',
+      mediaType ? `[${mediaType}]` : body,
+      mediaType ? { mediaType } : {},
+    );
 
-    const respostas = await this.responder(contato, body, primeiraVez);
+    const respostas = mediaType
+      ? this.tratarMidia(contato, mediaType)
+      : await this.responder(contato, body, primeiraVez);
 
     // Enquanto o paciente não marcar, o ciclo de 1/7/15 dias reinicia a cada contato.
     const temConsulta = !!this.agenda.nextBookingOf(contato.id);
@@ -43,6 +50,22 @@ class Bot {
     }
     this.store.commit('contact', contato);
     return respostas.filter(Boolean);
+  }
+
+  /**
+   * Mensagem que não é texto. Figurinha não precisa de gente; áudio, foto e
+   * documento precisam — e a conversa vai para a fila da recepção.
+   */
+  tratarMidia(contato, tipo) {
+    const resposta = [M.recebiMidia(this.clinic, contato, tipo)];
+    if (tipo === 'figurinha') return resposta;
+
+    contato.stage = 'atendimento humano';
+    contato.state = { step: 'atendente', data: contato.state.data || {} };
+    this.store.cancelReminders((r) => r.contactId === contato.id && r.kind === 'followup');
+    this.store.addNote(contato.id, `Enviou ${tipo} — a recepção precisa abrir a mensagem no WhatsApp`);
+    this.store.logEvent('midia', `${contato.name || contato.phone} enviou ${tipo} — encaminhado para a recepção`);
+    return resposta;
   }
 
   // ---------- roteamento ----------
@@ -70,6 +93,14 @@ class Bot {
 
     // 3. Se há um agendamento em curso, o passo atual tenta entender primeiro:
     //    "unimed" no meio do fluxo é a resposta da pergunta, não uma dúvida solta.
+    if (passo === 'espera_confirma') {
+      if (intencao === 'sim') return this.entrarNaEspera(contato);
+      if (intencao === 'nao') {
+        contato.state = { step: 'conversa', data: {} };
+        return ['Tudo bem! Se mudar de ideia, é só me chamar. 🙂'];
+      }
+    }
+
     if (passo === 'oferta' && !['cancelar', 'remarcar', 'minhas_consultas', 'ajuda', 'atendente'].includes(intencao)) {
       const resposta = this.tratarOferta(contato, body, intencao);
       if (resposta) {
@@ -89,6 +120,17 @@ class Bot {
     // 4. Intenções gerais.
     if (intencao === 'cancelar') return this.cancelar(contato);
     if (intencao === 'remarcar') return this.remarcar(contato);
+    // Vaga oferecida pela lista de espera tem prazo curto: a resposta a ela
+    // vem antes de qualquer outra leitura de "sim" ou "não".
+    const oferta = this.waitlist && this.waitlist.ofertaAberta(contato.id);
+    if (oferta && ['sim', 'nao', 'confirmar_presenca'].includes(intencao)) {
+      return intencao === 'nao'
+        ? await this.recusarVaga(contato, oferta)
+        : this.aceitarVaga(contato, oferta);
+    }
+
+    if (intencao === 'lista_espera') return this.entrarNaEspera(contato);
+    if (intencao === 'sair_espera') return this.sairDaEspera(contato);
     if (intencao === 'confirmar_presenca') return this.confirmarPresenca(contato);
 
     // "sim" / "não" logo depois do lembrete de véspera são resposta de
@@ -319,6 +361,75 @@ class Bot {
     return [abertura, ...proximo];
   }
 
+  // ---------- lista de espera ----------
+
+  entrarNaEspera(contato) {
+    if (!this.waitlist) return [M.semHorarios(this.clinic)];
+    const jaEstava = this.waitlist.entradasDe(contato.id)[0];
+    if (jaEstava) {
+      contato.state = { step: 'conversa', data: {} };
+      return [M.jaEstaNaEspera(this.waitlist.posicao(jaEstava))];
+    }
+
+    const dados = contato.state.data || {};
+    const entrada = this.waitlist.adicionar(contato.id, {
+      serviceId: dados.serviceId || null,
+      professionalId: dados.professionalId || null,
+    });
+    contato.stage = 'na espera';
+    contato.state = { step: 'conversa', data: {} };
+    return [M.entrouNaEspera(this.clinic, this.waitlist.posicao(entrada))];
+  }
+
+  sairDaEspera(contato) {
+    const entrada = this.waitlist && this.waitlist.entradasDe(contato.id)[0];
+    contato.state = { step: 'conversa', data: {} };
+    if (!entrada) return ['Você não está na lista de espera no momento. Quer que eu procure um horário?'];
+    this.waitlist.remover(entrada.id, 'removido');
+    if (contato.stage === 'na espera') contato.stage = 'ativo';
+    this.store.logEvent('espera', `${contato.name || contato.phone} saiu da lista de espera`);
+    return [M.saiuDaEspera()];
+  }
+
+  /** Aceitou a vaga oferecida: reserva na hora, pedindo só o que falta no cadastro. */
+  aceitarVaga(contato, entrada) {
+    const vaga = entrada.offer;
+    const service = findService(this.clinic, vaga.serviceId);
+    if (!this.agenda.isSlotFree(vaga.date, vaga.start, {
+      professionalId: vaga.professionalId, serviceId: service.id,
+    })) {
+      this.waitlist.recusar(entrada);
+      return [M.vagaJaFoi()];
+    }
+
+    contato.state = {
+      step: 'agendar_confirmar',
+      data: {
+        serviceId: service.id,
+        professionalId: vaga.professionalId,
+        date: vaga.date,
+        start: vaga.start,
+        insurance: contato.insurance,
+        entradaEsperaId: entrada.id,
+      },
+    };
+    if (!contato.name) {
+      contato.state.step = 'agendar_nome';
+      return [M.pedirNome()];
+    }
+    if (!contato.birthDate) {
+      contato.state.step = 'agendar_nascimento';
+      return [M.pedirNascimento(contato.name)];
+    }
+    return this.tratarConfirmacao(contato, 'sim', 'sim');
+  }
+
+  async recusarVaga(contato, entrada) {
+    await this.waitlist.recusar(entrada);
+    contato.state = { step: 'conversa', data: {} };
+    return ['Sem problema! Continuo com seu nome na lista e te aviso na próxima vaga. 🙂'];
+  }
+
   // ---------- fluxo de agendamento ----------
 
   /** Reconhece o tipo de atendimento pelo que a pessoa escreveu ("é um retorno"). */
@@ -535,7 +646,11 @@ class Bot {
   perguntarDia(contato) {
     const { professionalId, dias } = this.buscarDias(contato.state.data);
     if (!dias.length) {
-      contato.state = { step: 'conversa', data: {} };
+      // Sem vaga não é fim de conversa: é entrada para a lista de espera.
+      contato.state = {
+        step: 'espera_confirma',
+        data: { serviceId: contato.state.data.serviceId, professionalId: contato.state.data.professionalId },
+      };
       this.store.logEvent('agenda', `Sem horários para ${contato.name || contato.phone}`);
       return [M.semHorarios(this.clinic)];
     }
@@ -663,6 +778,10 @@ class Bot {
 
     contato.stage = 'agendado';
     contato.insurance = dados.insurance || contato.insurance;
+    if (dados.entradaEsperaId && this.waitlist) {
+      const entrada = this.store.state.waitlist.find((e) => e.id === dados.entradaEsperaId);
+      if (entrada) this.waitlist.aceitar(entrada);
+    }
     contato.state = { step: 'conversa', data: {} };
     this.store.cancelReminders((r) => r.contactId === contato.id && r.kind === 'followup');
     const criados = this.reminders.scheduleBookingReminders(consulta);

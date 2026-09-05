@@ -15,6 +15,7 @@ function emptyState() {
     bookings: [],
     events: [],
     campaigns: [],
+    waitlist: [],
     clinic: structuredClone(CLINICA_PADRAO),
   };
 }
@@ -197,6 +198,21 @@ class Store extends EventEmitter {
 
   bookingsOf(contactId) {
     return this.state.bookings.filter((b) => b.contactId === contactId);
+  }
+
+  // ---------- lista de espera ----------
+
+  addWaitlistEntry(entry) {
+    const full = {
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      status: 'aguardando',
+      offer: null,
+      ...entry,
+    };
+    this.state.waitlist.push(full);
+    this.commit('waitlist', full);
+    return full;
   }
 
   // ---------- disparos ----------

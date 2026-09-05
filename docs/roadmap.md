@@ -185,6 +185,7 @@ some. O código já guarda `createdAt` e `startsAt` — falta usar os dois junto
 
 Levantamento do que um consultório sentiria falta hoje, em ordem de urgência.
 Os três primeiros são o que eu resolveria antes de ligar isso num número de verdade.
+**B e C já estão feitos** — falta o A, que é o bloqueador.
 
 ## A. Login no painel  ⚠️ bloqueador
 
@@ -195,6 +196,8 @@ público. Depois: um usuário por pessoa da equipe, para saber quem respondeu o 
 
 ## B. Áudio e imagem  ⚠️ buraco silencioso
 
+> ✅ **Implementado.**
+
 `src/channels/whatsappWeb.js` ignora tudo que não é texto (`msg.type !== 'chat'`). Na prática, o
 paciente manda um áudio — que é o jeito mais comum de responder no WhatsApp — e **não recebe
 resposta nenhuma**. O mínimo é responder ("não consigo ouvir áudio por aqui, pode escrever? já
@@ -202,6 +205,8 @@ avisei a recepção") e jogar a conversa para a fila humana. Foto de carteirinha
 seguem o mesmo caminho, com o cuidado de não guardar imagem clínica.
 
 ## C. Lista de espera e encaixe
+
+> ✅ **Implementado.**
 
 Fecha o ciclo que o "não vem" e o cancelamento abriram: quando um horário volta para a agenda,
 oferecer automaticamente para quem está esperando — em ordem, com prazo para responder antes de

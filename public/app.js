@@ -129,6 +129,7 @@ function renderKpis() {
     ['Avisaram que não vêm', recusadas.length, recusadas.length ? 'danger' : ''],
     ['Na fila da recepção', humanos.length, humanos.length ? 'warn' : ''],
     ['Urgências', urgentes.length, urgentes.length ? 'danger' : ''],
+    ['Na lista de espera', (d.waitlist || []).length, ''],
     ['Pacientes', d.contacts.length, ''],
     ['Lembretes pendentes', pendentes.length, ''],
   ];
@@ -285,13 +286,28 @@ function renderChat() {
       ultimoDia = dia;
     }
     const bubble = el('div', `bubble ${m.direction}`);
-    bubble.innerHTML = formatBody(m.body);
+    const midia = m.meta && m.meta.mediaType;
+    if (midia) {
+      bubble.classList.add('media');
+      bubble.append(el('span', 'media-tag', `${ICONE_MIDIA[midia] || '📎'} ${midia} recebido`));
+      if (m.body && !m.body.startsWith('[')) bubble.append(el('div', null, m.body));
+    } else {
+      bubble.innerHTML = formatBody(m.body);
+    }
     bubble.append(el('span', 'meta', fmtHora(m.at)));
     box.append(bubble);
   }
   box.scrollTop = box.scrollHeight;
   renderQuickReplies();
 }
+
+const ICONE_MIDIA = {
+  audio: '🎤', imagem: '📷', video: '🎬', documento: '📄',
+  figurinha: '🙂', localizacao: '📍', contato: '👤', anexo: '📎',
+};
+
+/** Mídia que dá para simular no painel, para testar o caminho sem WhatsApp. */
+const ATALHOS_MIDIA = [['audio', '🎤 Áudio'], ['imagem', '📷 Foto']];
 
 const ATALHOS = [
   'Oi', 'Quanto custa a consulta?', 'Quero marcar uma consulta', 'É primeira consulta',
@@ -307,6 +323,12 @@ function renderQuickReplies() {
   for (const texto of ATALHOS) {
     const btn = el('button', null, texto);
     btn.addEventListener('click', () => enviar('in', texto));
+    box.append(btn);
+  }
+  for (const [tipo, rotulo] of ATALHOS_MIDIA) {
+    const btn = el('button', null, rotulo);
+    btn.title = 'Simula o paciente mandando esse tipo de mensagem';
+    btn.addEventListener('click', () => enviarMidia(tipo));
     box.append(btn);
   }
 }
@@ -361,6 +383,56 @@ function renderHoje() {
   }
 }
 
+/** Lista de espera: quem é chamado quando um horário volta para a agenda. */
+function renderEspera(panel, d, paciente) {
+  const fila = d.waitlist || [];
+  panel.append(el('div', 'day-title', `Lista de espera (${fila.length})`));
+
+  if (!fila.length) {
+    panel.append(el('div', 'desc',
+      'Ninguém esperando. Quando não há horário livre, o bot oferece a fila ao paciente.'));
+  }
+
+  for (const entrada of fila) {
+    const contato = pacientePorId(entrada.contactId);
+    const item = el('div', 'item');
+    const row = el('div', 'row');
+    row.append(el('span', 'title', `${entrada.posicao}º · ${nomePaciente(contato)}`));
+    row.append(el('span', `badge ${entrada.status === 'oferecido' ? 'aguardando' : ''}`,
+      entrada.status === 'oferecido' ? 'vaga oferecida' : 'esperando'));
+    item.append(row);
+
+    if (entrada.status === 'oferecido' && entrada.offer) {
+      item.append(el('div', 'desc',
+        `${fmtDia(`${entrada.offer.date}T12:00:00`)} às ${entrada.offer.start}`
+        + ` · responde até ${fmtHora(entrada.offer.expiresAt)}`));
+    } else {
+      item.append(el('div', 'desc', `na fila desde ${fmtDataHora(entrada.createdAt)}`));
+    }
+
+    const acoes = el('div', 'actions');
+    acoes.append(botao('Remover', async () => {
+      await api(`/api/waitlist/${entrada.id}`, { method: 'DELETE' });
+      toast('Nome retirado da lista');
+      await carregar();
+    }));
+    item.append(acoes);
+    panel.append(item);
+  }
+
+  if (paciente && !fila.some((e) => e.contactId === paciente.id)) {
+    const adicionar = el('button', 'ghost', `+ Colocar ${nomePaciente(paciente)} na espera`);
+    adicionar.addEventListener('click', async () => {
+      await api('/api/waitlist', { method: 'POST', body: { contactId: paciente.id } });
+      toast('Paciente na lista de espera');
+      await carregar();
+    });
+    panel.append(adicionar);
+  }
+
+  panel.append(el('hr'));
+}
+
 function botao(texto, acao) {
   const btn = el('button', 'ghost', texto);
   btn.addEventListener('click', acao);
@@ -373,12 +445,14 @@ async function statusConsulta(id, body) {
   await carregar();
 }
 
-/** Aba Agenda: próximos dias livres do primeiro profissional, para encaixe manual. */
+/** Aba Agenda: lista de espera, próximas consultas e horários livres. */
 function renderAgenda() {
   const panel = $('#tab-agenda');
   panel.innerHTML = '';
   const d = state.data;
   const paciente = pacientePorId(state.selected);
+
+  renderEspera(panel, d, paciente);
 
   const futuras = d.bookings
     .filter((b) => b.status === 'confirmado' && new Date(b.startsAt) >= new Date())
@@ -1100,6 +1174,18 @@ async function enviar(direcao, texto) {
     } else {
       await api('/api/messages', { method: 'POST', body: { contactId: paciente.id, body: texto } });
     }
+    await carregar();
+  } catch (err) {
+    toast(err.message);
+  }
+}
+
+/** Simula o paciente mandando áudio ou foto. */
+async function enviarMidia(tipo) {
+  const paciente = pacientePorId(state.selected);
+  if (!paciente) return toast('Selecione um paciente');
+  try {
+    await api('/api/simulate', { method: 'POST', body: { phone: paciente.phone, mediaType: tipo } });
     await carregar();
   } catch (err) {
     toast(err.message);

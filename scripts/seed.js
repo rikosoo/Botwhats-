@@ -95,6 +95,13 @@ async function main() {
     app.store.logEvent('confirmacao', `⚠️ ${carla.name} avisou que não vem em ${consultaDaCarla.date}`);
   }
 
+  // Duas pessoas esperando vaga: a fila só faz sentido quando tem gente nela.
+  for (const [phone, nome] of [['5511966660001', 'Zilda Martins'], ['5511966660002', 'Otavio Nunes']]) {
+    const paciente = app.store.upsertContact(phone, nome);
+    paciente.stage = 'na espera';
+    app.waitlist.adicionar(paciente.id, { serviceId: 'retorno' });
+  }
+
   app.store.saveNow();
 
   const s = app.store.state;
@@ -102,7 +109,8 @@ async function main() {
     + `${s.bookings.filter((b) => b.status === 'confirmado').length} consultas, `
     + `${s.reminders.filter((r) => r.status === 'pending').length} lembretes programados, `
     + `${s.events.filter((e) => e.type === 'urgencia').length} urgência(s), `
-    + `${s.bookings.filter((b) => b.attendance).length} consulta(s) com presença registrada.`);
+    + `${s.bookings.filter((b) => b.attendance).length} consulta(s) com presença registrada, `
+    + `${s.waitlist.length} na lista de espera.`);
 }
 
 main().catch((err) => { console.error(err); process.exit(1); });

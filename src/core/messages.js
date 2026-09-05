@@ -61,6 +61,35 @@ const M = {
     ]);
   },
 
+  // ---------- mídia ----------
+
+  /**
+   * Áudio, foto e documento. O bot não tenta adivinhar o conteúdo — diz o que
+   * consegue fazer e passa para gente de verdade, para o paciente não ficar
+   * falando sozinho.
+   */
+  recebiMidia(clinic, contato, tipo) {
+    const nome = primeiroNome(contato);
+    const abertura = nome ? `Oi, ${nome}!` : 'Oi!';
+
+    if (tipo === 'audio') {
+      return `${abertura} Recebi seu áudio, mas por aqui eu só consigo ler mensagens escritas. 🙏\n\n`
+        + 'Já avisei a recepção para ouvir e te responder. Se preferir adiantar, pode me escrever '
+        + 'em poucas palavras o que você precisa.';
+    }
+    if (tipo === 'imagem' || tipo === 'documento') {
+      const oque = tipo === 'imagem' ? 'sua foto' : 'seu documento';
+      return `${abertura} Recebi ${oque} e já encaminhei para a recepção conferir. 👍\n\n`
+        + '_Só um cuidado: evite mandar exames, laudos ou receitas por aqui — esses assuntos são '
+        + 'tratados na consulta._';
+    }
+    if (tipo === 'figurinha') {
+      return 'Recebi! 🙂 Se precisar de alguma coisa, é só me escrever.';
+    }
+    return `${abertura} Recebi seu anexo e passei para a recepção dar uma olhada. 👍\n\n`
+      + 'Se puder, me escreve em uma linha o que você precisa que eu já adianto.';
+  },
+
   // ---------- triagem ----------
 
   emergencia(clinic) {
@@ -147,7 +176,45 @@ const M = {
 
   semHorarios(clinic) {
     return 'No momento não encontrei horários livres nos próximos dias. 😕\n\n'
-      + `Posso pedir para a secretária te chamar assim que abrir uma vaga — ou você pode ligar para ${clinic.phone}. Quer que eu avise a equipe?`;
+      + 'Posso te colocar na *lista de espera*: assim que alguém desmarcar, eu te aviso na hora '
+      + '— normalmente aparece vaga toda semana. Quer que eu anote seu nome?';
+  },
+
+  entrouNaEspera(clinic, posicao) {
+    const fila = posicao > 1 ? `Você é a ${posicao}ª pessoa da fila. ` : 'Você é a próxima da fila. ';
+    return `Anotado! ✅ ${fila}Assim que abrir um horário eu te aviso por aqui.\n\n`
+      + `Se resolver de outro jeito, é só me dizer que eu tiro seu nome. Qualquer urgência, ligue ${clinic.phone}.`;
+  },
+
+  jaEstaNaEspera(posicao) {
+    return `Você já está na lista de espera${posicao > 1 ? `, na ${posicao}ª posição` : ' e é o próximo da fila'}. `
+      + 'Assim que abrir vaga eu te chamo. 🙂';
+  },
+
+  saiuDaEspera() {
+    return 'Tudo bem, tirei seu nome da lista de espera. Se mudar de ideia, é só me chamar. 🙂';
+  },
+
+  /** Vaga que abriu, oferecida a uma pessoa de cada vez. */
+  ofertaDeVaga(clinic, contato, vaga, profissional, minutos, hoje) {
+    const nome = primeiroNome(contato);
+    const quando = `${formatDateFriendly(vaga.date, hoje)} às ${vaga.start}`;
+    const prazo = minutos >= 60
+      ? `${Math.round(minutos / 60)} hora(s)`
+      : `${minutos} minutos`;
+    return `${nome ? `${nome}, abriu` : 'Abriu'} uma vaga! 🎉\n\n`
+      + `📅 ${quando}${profissional ? ` com ${profissional.name}` : ''}\n\n`
+      + `Quer ficar com ela? Responda *sim* nas próximas ${prazo} — depois disso eu preciso oferecer `
+      + 'para a próxima pessoa da fila.';
+  },
+
+  ofertaExpirada(clinic) {
+    return 'A vaga que abriu acabou indo para outra pessoa. 😕\n\n'
+      + 'Você continua na lista de espera — na primeira que abrir, eu te chamo de novo.';
+  },
+
+  vagaJaFoi() {
+    return 'Poxa, essa vaga acabou de ser preenchida. 😕 Você continua na lista e eu te aviso na próxima.';
   },
 
   pedirNome() {

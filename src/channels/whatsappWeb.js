@@ -4,6 +4,23 @@
  * Canal real, via whatsapp-web.js (WhatsApp Web + QR Code).
  * A biblioteca e opcional: so e carregada quando CHANNEL=whatsapp.
  */
+/**
+ * Como cada tipo de mensagem do WhatsApp e apresentado no painel.
+ * O conteudo em si nao e baixado: audio e imagem de paciente podem carregar
+ * dado clinico, e o consultorio nao precisa de copia disso no servidor.
+ */
+const TIPOS_DE_MIDIA = {
+  ptt: 'audio',
+  audio: 'audio',
+  image: 'imagem',
+  video: 'video',
+  document: 'documento',
+  sticker: 'figurinha',
+  location: 'localizacao',
+  vcard: 'contato',
+  multi_vcard: 'contato',
+};
+
 class WhatsAppWebChannel {
   constructor(config) {
     this.name = 'whatsapp';
@@ -53,13 +70,23 @@ class WhatsAppWebChannel {
     this.client.on('message', async (msg) => {
       if (!this.onMessage) return;
       if (msg.from.endsWith('@g.us')) return; // ignora grupos
-      if (msg.type !== 'chat') return;
+
+      // Audio, foto e documento nao podem cair no vazio: o paciente acha que
+      // falou com o consultorio e ninguem respondeu.
+      const mediaType = msg.type === 'chat' ? null : (TIPOS_DE_MIDIA[msg.type] || 'anexo');
+
       let name = null;
       try {
         const contact = await msg.getContact();
         name = contact.pushname || contact.name || null;
       } catch { /* nome e opcional */ }
-      await this.onMessage({ phone: msg.from.replace(/@c\.us$/, ''), name, body: msg.body });
+
+      await this.onMessage({
+        phone: msg.from.replace(/@c\.us$/, ''),
+        name,
+        body: msg.body || '',
+        mediaType,
+      });
     });
 
     await this.client.initialize();
@@ -77,4 +104,4 @@ class WhatsAppWebChannel {
   }
 }
 
-module.exports = { WhatsAppWebChannel };
+module.exports = { WhatsAppWebChannel, TIPOS_DE_MIDIA };
