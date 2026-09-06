@@ -48,8 +48,11 @@ async function main() {
   try {
     await app.channel.start();
   } catch (err) {
+    if (!String(app.channel.status || '').startsWith('erro')) {
+      app.channel.status = `erro ao iniciar: ${err.message}`;
+    }
     console.error('[canal] nao foi possivel iniciar:', err.message);
-    console.error('[canal] o painel continua funcionando no modo simulador.');
+    console.error('[canal] o painel mostra o erro em Ajustes > Conexao do WhatsApp.');
   }
 
   const shutdown = async () => {

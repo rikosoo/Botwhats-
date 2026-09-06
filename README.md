@@ -114,7 +114,7 @@ criptografado do mesmo jeito. Para um certificado sem aviso, veja as opções em
 ## Atualizar sem perder dados
 
 ```bash
-npm run atualizar
+git pull && npm run atualizar   # na primeira vez; depois, só `npm run atualizar`
 ```
 
 Faz backup em `~/backups`, atualiza o código, reinstala dependências, reinicia o serviço e roda o

@@ -1733,6 +1733,15 @@ function blocoWhatsApp(panel) {
     }
     caixa.append(el('hr'));
 
+    if (String(dados.status || '').startsWith('erro')) {
+      caixa.append(el('div', 'title', '⚠️ O WhatsApp não conseguiu iniciar'));
+      caixa.append(el('div', 'desc', dados.status));
+      caixa.append(el('div', 'warn-note',
+        'No servidor, veja o motivo com: journalctl -u botwhats -n 80 --no-pager — '
+        + 'e confira o Chrome com: npm run diagnostico'));
+      return;
+    }
+
     if (dados.canal !== 'whatsapp') {
       caixa.append(el('div', 'title', 'Modo simulador'));
       caixa.append(el('div', 'desc',

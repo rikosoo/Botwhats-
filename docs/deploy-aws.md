@@ -315,8 +315,11 @@ Com HTTPS ligado, o cookie de sessão passa a exigir conexão segura automaticam
 
 ```bash
 cd ~/Botwhats-
+git pull          # só na primeira vez, para trazer o próprio comando
 npm run atualizar
 ```
+
+Da segunda vez em diante, `npm run atualizar` sozinho basta — ele já faz o `git pull`.
 
 O comando guarda uma cópia dos dados em `~/backups`, baixa a versão nova, instala dependências,
 reinstala o serviço e roda o diagnóstico no fim.
@@ -351,6 +354,7 @@ Chrome, pacotes, swap e sessão do WhatsApp, e diz o comando de cada pendência.
 | `https://SEU_IP` não abre | Não existe HTTPS aqui. É `http://`, e pelo túnel é `localhost` |
 | `Could not resolve hostname 18-219-126-21` | O IP foi digitado com **hífens**. É com pontos: `18.219.126.21` |
 | QR Code dá "inválido" no celular | O código expira em segundos. Leia o que está **no painel naquele instante** (ele se renova sozinho), nunca de um print ou de um log antigo |
+| Painel preso em "Status: iniciando" | O Chrome não abriu. Rode `journalctl -u botwhats -n 80 --no-pager`; a causa costuma ser permissão de HOME ou memória. O `deploy/botwhats.service` novo já resolve os dois — copie-o de novo e reinicie |
 | QR sempre inválido, mesmo lendo na hora | O serviço pode estar reiniciando por memória. Veja `journalctl -u botwhats -n 50` e confirme o swap com `free -h` |
 | `https://` dá erro de certificado | Se você gerou o certificado próprio, é o aviso esperado: Avançado → Prosseguir |
 | Atualizei e sumiram os pacientes | Não é a atualização: `data/` fica fora do git. Confira `ls -la data/` e as cópias em `~/backups` |

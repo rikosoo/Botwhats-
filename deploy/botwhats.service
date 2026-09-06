@@ -23,6 +23,12 @@ RestartSec=5
 # derruba o serviço no meio da leitura do QR e o código "fica inválido".
 MemoryHigh=1200M
 MemoryMax=1700M
+# O Chrome escreve em $HOME (cache, crashpad). Com ProtectHome=read-only,
+# apontar o HOME para a pasta do projeto e o que o deixa abrir.
+Environment=HOME=/home/ubuntu/Botwhats-
+Environment=XDG_CONFIG_HOME=/home/ubuntu/Botwhats-/.config
+Environment=XDG_CACHE_HOME=/home/ubuntu/Botwhats-/.cache
+
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=botwhats

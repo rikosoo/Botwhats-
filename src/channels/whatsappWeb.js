@@ -42,7 +42,20 @@ class WhatsAppWebChannel {
     }
     const { Client, LocalAuth } = wweb;
 
-    const puppeteer = { args: ['--no-sandbox', '--disable-setuid-sandbox'] };
+    const puppeteer = {
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        // /dev/shm e minusculo em instancia pequena; sem isto o Chrome trava
+        // ao abrir e o QR nunca chega.
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-extensions',
+      ],
+      timeout: 120000,
+    };
     if (this.config.chromiumPath) puppeteer.executablePath = this.config.chromiumPath;
 
     this.client = new Client({ authStrategy: new LocalAuth(), puppeteer });
@@ -89,7 +102,13 @@ class WhatsAppWebChannel {
       });
     });
 
-    await this.client.initialize();
+    try {
+      await this.client.initialize();
+    } catch (err) {
+      // Falhar calado deixa o painel esperando um QR que nunca vem.
+      this.status = `erro ao iniciar: ${err.message}`;
+      throw err;
+    }
   }
 
   async sendText(phone, text) {

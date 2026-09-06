@@ -106,3 +106,15 @@ test('o interruptor do bot é uma rota protegida', async () => {
     await p.fechar();
   }
 });
+
+test('falha ao iniciar o canal aparece no painel, não só no log', async () => {
+  const p = await painel({ name: 'whatsapp', status: 'erro ao iniciar: Failed to launch the browser process', qr: null });
+  try {
+    const { corpo } = await p.chamar('/api/whatsapp');
+    assert.strictEqual(corpo.conectado, false);
+    assert.match(corpo.status, /^erro ao iniciar/);
+    assert.strictEqual(corpo.qrSvg, null, 'sem QR falso enquanto o canal está quebrado');
+  } finally {
+    await p.fechar();
+  }
+});
