@@ -189,3 +189,61 @@ test('horários livres respondem à combinação de médico e atendimento', asyn
     await p.fechar();
   }
 });
+
+test('bloquear e desbloquear um dia da agenda', async () => {
+  const p = await painel();
+  try {
+    const dia = p.app.agenda.nextAvailableDays(1, { professionalId: 'dr-exemplo', serviceId: 'retorno' })[0].date;
+    const antes = p.app.agenda.slotsFor(dia, { professionalId: 'dr-exemplo', serviceId: 'retorno' }).length;
+    assert.ok(antes > 0, 'o dia tinha horários');
+
+    // Bloqueia (férias, congresso, feriado)
+    await p.chamar('/api/professionals/dr-exemplo', {
+      method: 'PUT', body: { exceptions: { [dia]: [] } },
+    });
+    assert.strictEqual(
+      p.app.agenda.slotsFor(dia, { professionalId: 'dr-exemplo', serviceId: 'retorno' }).length,
+      0,
+      'bloqueado, o dia some da agenda',
+    );
+
+    // E o bot deixa de oferecer aquele dia
+    const phone = '5511900100001';
+    await p.chamar('/api/simulate', { method: 'POST', body: { phone, body: 'oi' } });
+    await p.chamar('/api/simulate', { method: 'POST', body: { phone, body: 'quero marcar um retorno' } });
+    const dias = p.app.store.findContactByPhone(phone).state.data.opcoesDias || [];
+    assert.ok(!dias.includes(dia), 'o dia bloqueado não é oferecido ao paciente');
+
+    // Desbloqueia — é o que o ✕ do painel faz: manda as exceções sem essa data
+    await p.chamar('/api/professionals/dr-exemplo', { method: 'PUT', body: { exceptions: {} } });
+    assert.strictEqual(
+      p.app.agenda.slotsFor(dia, { professionalId: 'dr-exemplo', serviceId: 'retorno' }).length,
+      antes,
+      'desbloqueado, os horários voltam exatamente como eram',
+    );
+  } finally {
+    await p.fechar();
+  }
+});
+
+test('bloquear um dia não mexe nas consultas já marcadas nele', async () => {
+  const p = await painel();
+  try {
+    const paciente = p.app.store.upsertContact('5511900100002', 'Lúcia Prado');
+    const dia = p.app.agenda.nextAvailableDays(1, { professionalId: 'dr-exemplo', serviceId: 'retorno' })[0];
+    const consulta = p.app.agenda.book(paciente.id, {
+      professionalId: 'dr-exemplo', serviceId: 'retorno', date: dia.date, start: dia.slots[0].start,
+    });
+
+    await p.chamar('/api/professionals/dr-exemplo', {
+      method: 'PUT', body: { exceptions: { [dia.date]: [] } },
+    });
+
+    // A consulta continua de pé: quem já marcou não perde o horário sozinho.
+    assert.strictEqual(p.app.store.getBooking(consulta.id).status, 'confirmado');
+    const visao = p.app.agenda.dayView(dia.date).find((v) => v.professional.id === 'dr-exemplo');
+    assert.strictEqual(visao.bookings.length, 1, 'e continua aparecendo na agenda do dia');
+  } finally {
+    await p.fechar();
+  }
+});

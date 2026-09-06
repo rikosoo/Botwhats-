@@ -69,10 +69,17 @@ test('fluxo completo de agendamento em linguagem natural', async () => {
   assert.match(texto, /15 minutos de antecedência/);
   assert.match(texto, /exames anteriores/, 'manda o preparo do tipo de atendimento');
 
-  // Follow-up sai de cena e entram os lembretes da consulta.
+  // Follow-up sai de cena assim que a pessoa marca. Quais lembretes de consulta
+  // cabem depende de quanto falta para o dia — isso é coberto em reminders.test.js.
   const pendentes = app.store.state.reminders.filter((r) => r.status === 'pending');
-  assert.ok(pendentes.length > 0);
-  assert.ok(pendentes.every((r) => r.kind === 'booking'));
+  assert.ok(
+    pendentes.every((r) => r.kind !== 'followup'),
+    'quem marcou não continua recebendo convite para marcar',
+  );
+  assert.ok(
+    app.store.state.reminders.some((r) => r.kind === 'followup' && r.status === 'cancelado'),
+    'os follow-ups que existiam foram cancelados',
+  );
 });
 
 test('entende escolhas escritas: "tanto faz", nome do médico e "10h"', async () => {
