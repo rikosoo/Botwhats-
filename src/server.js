@@ -110,7 +110,12 @@ function createServer(app) {
       hoje,
       aberto: agenda.isOpenNow(),
       channel: { name: channel.name, status: channel.status, qr: channel.qr || null },
-      offsets: { followUp: config.followUpOffsets, booking: config.bookingOffsets },
+      offsets: {
+        followUp: reminders.regra('followUp', config.followUpOffsets),
+        booking: reminders.regra('booking', config.bookingOffsets),
+        waitlistOfferMinutes: Math.round(waitlist.prazoMs / 60000),
+        scarcityThreshold: reminders.regra('scarcityThreshold', config.scarcityThreshold),
+      },
       contacts: store.state.contacts.map((c) => ({
         ...c,
         messageCount: store.messagesOf(c.id).length,
@@ -239,6 +244,16 @@ function createServer(app) {
     res.json({
       date,
       slots: agenda.slotsFor(date, {
+        professionalId: req.query.professionalId,
+        serviceId: req.query.serviceId,
+      }),
+    });
+  });
+
+  // Dias com horário livre para uma combinação de profissional e atendimento.
+  server.get('/api/slots-dias', (req, res) => {
+    res.json({
+      dias: agenda.nextAvailableDays(7, {
         professionalId: req.query.professionalId,
         serviceId: req.query.serviceId,
       }),
@@ -401,7 +416,7 @@ function createServer(app) {
     const permitido = [
       'name', 'specialty', 'assistantName', 'address', 'addressHint', 'mapsUrl', 'phone',
       'hoursText', 'insurances', 'acceptsInsurance', 'privatePrice', 'paymentInfo',
-      'documents', 'services', 'policies', 'messages',
+      'documents', 'services', 'policies', 'messages', 'reminders',
     ];
     for (const campo of permitido) {
       if (req.body && req.body[campo] !== undefined) store.clinic[campo] = req.body[campo];
@@ -411,15 +426,139 @@ function createServer(app) {
     return res.json(store.clinic);
   });
 
+  /** Identificador estável a partir do nome, sem acento nem espaço. */
+  function gerarId(nome, existentes) {
+    const base = String(nome).normalize('NFD').replace(/\p{Diacritic}/gu, '')
+      .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'item';
+    let id = base;
+    let n = 2;
+    while (existentes.some((x) => x.id === id)) { id = `${base}-${n}`; n += 1; }
+    return id;
+  }
+
+  const consultasFuturas = (filtro) => store.state.bookings.filter(
+    (b) => b.status === 'confirmado' && new Date(b.startsAt) >= new Date() && filtro(b),
+  ).length;
+
+  // ---------- profissionais ----------
+
+  server.post('/api/professionals', (req, res) => {
+    const { name, specialty, crm, slotMinutes } = req.body || {};
+    if (!name || String(name).trim().length < 3) {
+      return res.status(400).json({ error: 'informe o nome do profissional' });
+    }
+    const profissional = {
+      id: gerarId(name, store.clinic.professionals),
+      name: String(name).trim(),
+      specialty: (specialty || store.clinic.specialty || '').trim(),
+      crm: (crm || '').trim(),
+      slotMinutes: Number(slotMinutes) || 30,
+      weekly: { 0: [], 1: [], 2: [], 3: [], 4: [], 5: [], 6: [] },
+      exceptions: {},
+    };
+    store.clinic.professionals.push(profissional);
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', `${profissional.name} adicionado à equipe`);
+    return res.json(profissional);
+  });
+
   server.put('/api/professionals/:id', (req, res) => {
     const profissional = store.clinic.professionals.find((p) => p.id === req.params.id);
     if (!profissional) return res.status(404).json({ error: 'profissional não encontrado' });
     for (const campo of ['name', 'specialty', 'crm', 'slotMinutes', 'weekly', 'exceptions']) {
       if (req.body && req.body[campo] !== undefined) profissional[campo] = req.body[campo];
     }
+    if (profissional.slotMinutes) profissional.slotMinutes = Number(profissional.slotMinutes) || 30;
+
+    // O nome fica gravado na consulta; atualizar mantém a agenda coerente.
+    for (const booking of store.state.bookings) {
+      if (booking.professionalId === profissional.id) booking.professionalName = profissional.name;
+    }
     store.commit('clinic', store.clinic);
-    store.logEvent('agenda', `Agenda de ${profissional.name} atualizada`);
+    store.logEvent('config', `Cadastro de ${profissional.name} atualizado`);
     return res.json(profissional);
+  });
+
+  server.delete('/api/professionals/:id', (req, res) => {
+    const profissional = store.clinic.professionals.find((p) => p.id === req.params.id);
+    if (!profissional) return res.status(404).json({ error: 'profissional não encontrado' });
+    if (store.clinic.professionals.length === 1) {
+      return res.status(409).json({ error: 'o consultório precisa de pelo menos um profissional' });
+    }
+    // Remover alguém com agenda marcada deixaria pacientes sem consulta e sem aviso.
+    const marcadas = consultasFuturas((b) => b.professionalId === profissional.id);
+    if (marcadas) {
+      return res.status(409).json({
+        error: `${profissional.name} tem ${marcadas} consulta(s) futura(s). Remarque ou cancele antes de remover.`,
+      });
+    }
+    store.clinic.professionals = store.clinic.professionals.filter((p) => p.id !== profissional.id);
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', `${profissional.name} removido da equipe`);
+    return res.json({ ok: true });
+  });
+
+  // ---------- tipos de atendimento ----------
+
+  function normalizarServico(entrada, atual = {}) {
+    const servico = { ...atual };
+    if (entrada.name !== undefined) servico.name = String(entrada.name).trim();
+    if (entrada.durationMin !== undefined) servico.durationMin = Number(entrada.durationMin) || 30;
+    if (entrada.returnDays !== undefined) servico.returnDays = Number(entrada.returnDays) || 0;
+    if (entrada.price !== undefined) servico.price = String(entrada.price).trim();
+    if (entrada.prep !== undefined) servico.prep = String(entrada.prep).trim();
+    if (entrada.includes !== undefined) {
+      servico.includes = Array.isArray(entrada.includes)
+        ? entrada.includes.map((i) => String(i).trim()).filter(Boolean)
+        : String(entrada.includes).split('\n').map((i) => i.trim()).filter(Boolean);
+    }
+    return servico;
+  }
+
+  server.post('/api/services', (req, res) => {
+    const dados = req.body || {};
+    if (!dados.name || String(dados.name).trim().length < 3) {
+      return res.status(400).json({ error: 'informe o nome do atendimento' });
+    }
+    const servico = normalizarServico(dados, {
+      id: gerarId(dados.name, store.clinic.services),
+      durationMin: 30,
+      returnDays: 0,
+      includes: [],
+      prep: '',
+      price: '',
+    });
+    store.clinic.services.push(servico);
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', `Atendimento "${servico.name}" criado`);
+    return res.json(servico);
+  });
+
+  server.put('/api/services/:id', (req, res) => {
+    const indice = store.clinic.services.findIndex((s) => s.id === req.params.id);
+    if (indice === -1) return res.status(404).json({ error: 'atendimento não encontrado' });
+    store.clinic.services[indice] = normalizarServico(req.body || {}, store.clinic.services[indice]);
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', `Atendimento "${store.clinic.services[indice].name}" atualizado`);
+    return res.json(store.clinic.services[indice]);
+  });
+
+  server.delete('/api/services/:id', (req, res) => {
+    const servico = store.clinic.services.find((s) => s.id === req.params.id);
+    if (!servico) return res.status(404).json({ error: 'atendimento não encontrado' });
+    if (store.clinic.services.length === 1) {
+      return res.status(409).json({ error: 'o consultório precisa de pelo menos um tipo de atendimento' });
+    }
+    const marcadas = consultasFuturas((b) => b.serviceId === servico.id);
+    if (marcadas) {
+      return res.status(409).json({
+        error: `Há ${marcadas} consulta(s) futura(s) desse tipo. Remarque ou cancele antes de remover.`,
+      });
+    }
+    store.clinic.services = store.clinic.services.filter((s) => s.id !== servico.id);
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', `Atendimento "${servico.name}" removido`);
+    return res.json({ ok: true });
   });
 
   server.get('/api/health', (req, res) => res.json({

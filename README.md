@@ -93,6 +93,27 @@ automaticamente. Cadastro e histórico de consultas continuam.
 Para rodar num servidor com acesso só seu, veja [`docs/deploy-aws.md`](docs/deploy-aws.md): EC2 com
 a porta do painel fechada, acesso por túnel SSH, serviço no systemd e backup diário.
 
+## Equipe e tipos de atendimento
+
+Seção **Equipe** do painel — tudo editável, sem tocar no código:
+
+- **Médicos**: nome (o que o paciente vê), especialidade, CRM, grade da agenda, horários por dia da
+  semana e **dias bloqueados** (férias, congresso, feriado). Dá para adicionar e remover
+  profissionais. Renomear atualiza o nome nas consultas já marcadas; remover é bloqueado enquanto
+  houver consulta futura no nome da pessoa — senão pacientes ficariam sem consulta e sem aviso.
+- **Tipos de atendimento**: nome, duração, valor, o que está incluso, preparo e prazo do lembrete de
+  retorno. A duração define a grade de horários e o quanto a consulta ocupa na agenda.
+
+![cadastro da equipe](docs/equipe.png)
+
+Na aba **Agenda**, o encaixe manual tem seletor de **médico e tipo de atendimento** — os horários
+livres mudam conforme a combinação, em vez de assumir o primeiro cadastrado.
+
+Em **Ajustes → Lembretes e regras** ficam as janelas de follow-up (padrão 1/7/15 dias), os lembretes
+antes da consulta (7/3/1), o prazo da vaga oferecida na fila, a ocupação mínima para o bot falar em
+"agenda enchendo", a antecedência de chegada e as horas mínimas para cancelar. O que já está
+programado continua como foi criado; a mudança vale para os próximos.
+
 ## Convênios
 
 Na aba **Ajustes** do painel dá para:
@@ -367,7 +388,9 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `POST` | `/api/broadcast` | Dispara agora ou agenda (`{contactIds, body, scheduledAt}`) |
 | `DELETE` | `/api/broadcast/:id` | Cancela um disparo ainda agendado |
 | `GET`/`PUT` | `/api/clinic` | Dados do consultório |
-| `PUT` | `/api/professionals/:id` | Agenda e dados de um profissional |
+| `POST`/`PUT`/`DELETE` | `/api/professionals[/:id]` | Cadastro, edição e remoção de profissionais |
+| `POST`/`PUT`/`DELETE` | `/api/services[/:id]` | Tipos de atendimento |
+| `GET` | `/api/slots-dias?professionalId=&serviceId=` | Dias com horário livre para a combinação |
 | `GET` | `/api/health` | Status do canal e contadores |
 
 ## Estrutura
@@ -394,7 +417,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 105 testes com node:test
+test/                 112 testes com node:test
 ```
 
 ## Testes

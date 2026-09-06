@@ -9,6 +9,7 @@ const state = {
   selecionados: new Set(),   // números escolhidos para o disparo
   segmento: null,            // segmento que preencheu a seleção
   rascunho: localStorage.getItem('rascunhoDisparo') || '',
+  encaixe: {},              // profissional/atendimento escolhidos para encaixe manual
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -159,6 +160,7 @@ function render() {
   renderNumeros();
   renderActivity();
   renderMensagens();
+  renderEquipe();
   renderConfig();
 }
 
@@ -525,17 +527,47 @@ function renderAgenda() {
   }
 
   panel.append(el('hr'));
-  const servico = d.clinic.services[0];
   panel.append(el('div', 'day-title', paciente
-    ? `Encaixar ${nomePaciente(paciente)} (${servico.name}, ${d.clinic.professionals[0].name})`
+    ? `Encaixar ${nomePaciente(paciente)}`
     : 'Horários livres (selecione um paciente para encaixar)'));
 
-  for (const dia of d.agendaDays) {
+  // Quem atende e o que é o atendimento mudam a grade — por isso a escolha
+  // vem antes dos horários, e não fixa no primeiro cadastrado.
+  const escolha = el('div', 'send-row');
+  const profSelect = el('select');
+  for (const p of d.clinic.professionals) {
+    const op = el('option', null, p.name);
+    op.value = p.id;
+    profSelect.append(op);
+  }
+  profSelect.value = state.encaixe.professionalId || d.clinic.professionals[0].id;
+
+  const servSelect = el('select');
+  for (const sv of d.clinic.services) {
+    const op = el('option', null, `${sv.name} (${sv.durationMin} min)`);
+    op.value = sv.id;
+    servSelect.append(op);
+  }
+  servSelect.value = state.encaixe.serviceId || d.clinic.services[0].id;
+
+  const aoTrocar = async () => {
+    state.encaixe = { professionalId: profSelect.value, serviceId: servSelect.value };
+    const dados = await api(`/api/slots-dias?professionalId=${profSelect.value}&serviceId=${servSelect.value}`);
+    state.encaixe.dias = dados.dias;
+    renderAgenda();
+  };
+  profSelect.addEventListener('change', aoTrocar);
+  servSelect.addEventListener('change', aoTrocar);
+  escolha.append(profSelect, servSelect);
+  panel.append(escolha);
+
+  const dias = state.encaixe.dias || d.agendaDays;
+  for (const dia of dias) {
     const bloco = el('div', 'day-block');
     bloco.append(el('div', 'day-title cap', diaSemana(dia.date)));
     const slots = el('div', 'slots');
-    for (const s of dia.slots) {
-      const btn = el('button', 'slot', s.start);
+    for (const sl of dia.slots) {
+      const btn = el('button', 'slot', sl.start);
       btn.addEventListener('click', async () => {
         if (!paciente) return toast('Selecione um paciente primeiro');
         try {
@@ -543,24 +575,28 @@ function renderAgenda() {
             method: 'POST',
             body: {
               contactId: paciente.id,
-              professionalId: s.professionalId,
-              serviceId: servico.id,
+              professionalId: profSelect.value,
+              serviceId: servSelect.value,
               date: dia.date,
-              start: s.start,
+              start: sl.start,
               insurance: paciente.insurance,
             },
           });
-          toast(`Encaixado ${s.start} em ${dia.date}`);
+          toast(`Encaixado ${sl.start} em ${dia.date}`);
+          state.encaixe.dias = null;
           await carregar();
         } catch (err) { toast(err.message); }
+        return undefined;
       });
       slots.append(btn);
     }
     bloco.append(slots);
     panel.append(bloco);
   }
-  if (!d.agendaDays.length) {
-    panel.append(el('div', 'empty', 'Sem horários livres. Ajuste a agenda na aba Consultório.'));
+
+  if (!dias.length) {
+    panel.append(el('div', 'empty',
+      'Sem horários livres para essa combinação. Ajuste a agenda em Equipe.'));
   }
 }
 
@@ -1114,6 +1150,250 @@ function renderMensagens() {
 
 const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
 
+/** Campo simples com rótulo, devolvendo o input para quem chamou. */
+function campoLinha(rotulo, valor, tipo = 'text') {
+  const box = el('div', 'field');
+  box.append(el('label', null, rotulo));
+  const input = el('input');
+  input.type = tipo;
+  input.value = valor === undefined || valor === null ? '' : valor;
+  box.append(input);
+  return { box, input };
+}
+
+function faixasDoTexto(texto) {
+  const faixas = [];
+  for (const parte of texto.split(',').map((t) => t.trim()).filter(Boolean)) {
+    const m = parte.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
+    if (!m) return { erro: `Faixa inválida: "${parte}"` };
+    faixas.push({ start: m[1].padStart(5, '0'), end: m[2].padStart(5, '0') });
+  }
+  return { faixas };
+}
+
+/** Seção Equipe: quem atende, quando atende e o que o consultório oferece. */
+function renderEquipe() {
+  const panel = $('#tab-equipe');
+  if (!panel) return;
+  const foco = document.activeElement;
+  if (panel.childElementCount && panel.contains(foco)
+      && (foco.tagName === 'TEXTAREA' || foco.tagName === 'INPUT')) return;
+
+  panel.innerHTML = '';
+  const clinic = state.data.clinic;
+
+  panel.append(el('div', 'day-title', `Profissionais (${clinic.professionals.length})`));
+
+  for (const p of clinic.professionals) {
+    const bloco = el('div', 'msg-block');
+    const cabecalho = el('div', 'row');
+    cabecalho.append(el('span', 'title', p.name));
+    const remover = el('button', 'ghost danger', '🗑 Remover');
+    remover.addEventListener('click', async () => {
+      if (!confirm(`Remover ${p.name} da equipe?`)) return;
+      try {
+        await api(`/api/professionals/${p.id}`, { method: 'DELETE' });
+        toast('Profissional removido');
+        await carregar();
+      } catch (err) { toast(err.message); }
+    });
+    cabecalho.append(remover);
+    bloco.append(cabecalho);
+
+    const nome = campoLinha('Nome (como aparece para o paciente)', p.name);
+    const especialidade = campoLinha('Especialidade', p.specialty);
+    const crm = campoLinha('CRM', p.crm);
+    const grade = campoLinha('Grade da agenda (minutos)', p.slotMinutes, 'number');
+    grade.input.min = '5';
+    grade.input.step = '5';
+    bloco.append(nome.box, especialidade.box, crm.box, grade.box);
+
+    bloco.append(el('div', 'desc',
+      'Horários de atendimento por dia, separados por vírgula. Ex.: 08:00-12:00, 14:00-18:00. Vazio = não atende.'));
+    const entradas = [];
+    for (let dia = 0; dia < 7; dia += 1) {
+      const linha = el('div', 'week-row');
+      linha.append(el('label', null, DIAS[dia]));
+      const input = el('input');
+      input.type = 'text';
+      input.placeholder = 'não atende';
+      input.value = (p.weekly[dia] || []).map((r) => `${r.start}-${r.end}`).join(', ');
+      linha.append(input);
+      bloco.append(linha);
+      entradas.push(input);
+    }
+
+    // Férias e feriados: fechar um dia específico sem mexer na semana toda.
+    const bloqueadas = Object.keys(p.exceptions || {})
+      .filter((d) => Array.isArray(p.exceptions[d]) && !p.exceptions[d].length)
+      .sort();
+    bloco.append(el('div', 'day-title', 'Dias bloqueados (férias, congresso, feriado)'));
+    if (!bloqueadas.length) bloco.append(el('div', 'desc', 'Nenhum dia bloqueado.'));
+    for (const data of bloqueadas) {
+      const linha = el('div', 'conv-row');
+      linha.append(el('span', 'conv-name', data.split('-').reverse().join('/')));
+      const tirar = el('button', 'ghost', '✕');
+      tirar.title = 'Voltar a atender neste dia';
+      tirar.addEventListener('click', async () => {
+        const excecoes = { ...(p.exceptions || {}) };
+        delete excecoes[data];
+        await api(`/api/professionals/${p.id}`, { method: 'PUT', body: { exceptions: excecoes } });
+        toast('Dia liberado');
+        await carregar();
+      });
+      linha.append(tirar);
+      bloco.append(linha);
+    }
+    const novaData = el('div', 'conv-add');
+    const dataInput = el('input');
+    dataInput.type = 'date';
+    const bloquear = el('button', 'ghost', 'Bloquear dia');
+    bloquear.addEventListener('click', async () => {
+      if (!dataInput.value) return toast('Escolha a data');
+      const excecoes = { ...(p.exceptions || {}), [dataInput.value]: [] };
+      await api(`/api/professionals/${p.id}`, { method: 'PUT', body: { exceptions: excecoes } });
+      toast('Dia bloqueado');
+      await carregar();
+      return undefined;
+    });
+    novaData.append(dataInput, bloquear);
+    bloco.append(novaData);
+
+    const salvar = el('button', null, 'Salvar profissional');
+    salvar.addEventListener('click', async () => {
+      const weekly = {};
+      for (let dia = 0; dia < 7; dia += 1) {
+        const { faixas, erro } = faixasDoTexto(entradas[dia].value);
+        if (erro) return toast(`${DIAS[dia]}: ${erro}`);
+        weekly[dia] = faixas;
+      }
+      try {
+        await api(`/api/professionals/${p.id}`, {
+          method: 'PUT',
+          body: {
+            name: nome.input.value.trim(),
+            specialty: especialidade.input.value.trim(),
+            crm: crm.input.value.trim(),
+            slotMinutes: Number(grade.input.value) || 30,
+            weekly,
+          },
+        });
+        toast('Profissional salvo');
+        await carregar();
+      } catch (err) { toast(err.message); }
+      return undefined;
+    });
+    bloco.append(salvar);
+    panel.append(bloco);
+  }
+
+  // Novo profissional
+  const novo = el('div', 'msg-block');
+  novo.append(el('div', 'title', '+ Adicionar profissional'));
+  const nNome = campoLinha('Nome', '');
+  const nEsp = campoLinha('Especialidade', clinic.specialty || '');
+  const nCrm = campoLinha('CRM', '');
+  novo.append(nNome.box, nEsp.box, nCrm.box);
+  const criar = el('button', null, 'Adicionar');
+  criar.addEventListener('click', async () => {
+    try {
+      await api('/api/professionals', {
+        method: 'POST',
+        body: { name: nNome.input.value, specialty: nEsp.input.value, crm: nCrm.input.value },
+      });
+      toast('Profissional adicionado — agora defina a agenda dele');
+      await carregar();
+    } catch (err) { toast(err.message); }
+  });
+  novo.append(criar);
+  panel.append(novo);
+
+  // ---------- tipos de atendimento ----------
+
+  panel.append(el('hr'));
+  panel.append(el('div', 'day-title', `Tipos de atendimento (${clinic.services.length})`));
+  panel.append(el('div', 'desc',
+    'A duração define a grade de horários e o quanto a consulta ocupa na agenda.'));
+
+  for (const servico of clinic.services) {
+    const bloco = el('div', 'msg-block');
+    const cabecalho = el('div', 'row');
+    cabecalho.append(el('span', 'title', servico.name));
+    const remover = el('button', 'ghost danger', '🗑 Remover');
+    remover.addEventListener('click', async () => {
+      if (!confirm(`Remover o atendimento "${servico.name}"?`)) return;
+      try {
+        await api(`/api/services/${servico.id}`, { method: 'DELETE' });
+        toast('Atendimento removido');
+        await carregar();
+      } catch (err) { toast(err.message); }
+    });
+    cabecalho.append(remover);
+    bloco.append(cabecalho);
+
+    const nome = campoLinha('Nome', servico.name);
+    const duracao = campoLinha('Duração (minutos)', servico.durationMin, 'number');
+    const preco = campoLinha('Valor', servico.price || '');
+    const retorno = campoLinha('Lembrete de retorno (dias, 0 = não envia)', servico.returnDays || 0, 'number');
+    bloco.append(nome.box, duracao.box, preco.box, retorno.box);
+
+    const inclui = el('div', 'field');
+    inclui.append(el('label', null, 'O que está incluso (um por linha)'));
+    const incluiArea = el('textarea');
+    incluiArea.rows = 3;
+    incluiArea.value = (servico.includes || []).join('\n');
+    inclui.append(incluiArea);
+    bloco.append(inclui);
+
+    const preparo = el('div', 'field');
+    preparo.append(el('label', null, 'Preparo (vai nos lembretes)'));
+    const preparoArea = el('textarea');
+    preparoArea.rows = 2;
+    preparoArea.value = servico.prep || '';
+    preparo.append(preparoArea);
+    bloco.append(preparo);
+
+    const salvar = el('button', null, 'Salvar atendimento');
+    salvar.addEventListener('click', async () => {
+      try {
+        await api(`/api/services/${servico.id}`, {
+          method: 'PUT',
+          body: {
+            name: nome.input.value,
+            durationMin: duracao.input.value,
+            price: preco.input.value,
+            returnDays: retorno.input.value,
+            includes: incluiArea.value,
+            prep: preparoArea.value,
+          },
+        });
+        toast('Atendimento salvo');
+        await carregar();
+      } catch (err) { toast(err.message); }
+    });
+    bloco.append(salvar);
+    panel.append(bloco);
+  }
+
+  const novoServico = el('div', 'msg-block');
+  novoServico.append(el('div', 'title', '+ Adicionar tipo de atendimento'));
+  const sNome = campoLinha('Nome', '');
+  const sDur = campoLinha('Duração (minutos)', 30, 'number');
+  novoServico.append(sNome.box, sDur.box);
+  const criarServico = el('button', null, 'Adicionar');
+  criarServico.addEventListener('click', async () => {
+    try {
+      await api('/api/services', {
+        method: 'POST', body: { name: sNome.input.value, durationMin: sDur.input.value },
+      });
+      toast('Atendimento criado');
+      await carregar();
+    } catch (err) { toast(err.message); }
+  });
+  novoServico.append(criarServico);
+  panel.append(novoServico);
+}
+
 function campo(label, valor, id, multilinha) {
   const box = el('div', 'field');
   box.append(el('label', null, label));
@@ -1260,53 +1540,7 @@ function renderConfig() {
   });
   panel.append(salvar);
 
-  panel.append(el('hr'));
-  panel.append(el('div', 'day-title', 'Agenda dos profissionais'));
-  panel.append(el('div', 'desc', 'Faixas por dia, separadas por vírgula. Ex.: 08:00-12:00, 14:00-18:00. Vazio = não atende.'));
-
-  for (const p of c.professionals) {
-    const bloco = el('div', 'prof-block');
-    const head = el('div', 'prof-head');
-    head.append(el('span', 'name', p.name));
-    head.append(el('span', 'spec', `${p.specialty} · grade ${p.slotMinutes} min`));
-    bloco.append(head);
-
-    for (let dia = 0; dia < 7; dia += 1) {
-      const row = el('div', 'week-row');
-      row.append(el('label', null, DIAS[dia]));
-      const input = el('input');
-      input.type = 'text';
-      input.className = 'range-input';
-      input.dataset.prof = p.id;
-      input.dataset.dia = String(dia);
-      input.placeholder = 'não atende';
-      input.value = (p.weekly[dia] || []).map((r) => `${r.start}-${r.end}`).join(', ');
-      row.append(input);
-      bloco.append(row);
-    }
-
-    const salvarAgenda = el('button', null, `Salvar agenda de ${p.name.split(' ')[0]} ${p.name.split(' ')[1] || ''}`.trim());
-    salvarAgenda.addEventListener('click', async () => {
-      const weekly = {};
-      let erro = null;
-      for (const input of bloco.querySelectorAll('.range-input')) {
-        const faixas = [];
-        for (const parte of input.value.split(',').map((s) => s.trim()).filter(Boolean)) {
-          const m = parte.match(/^(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})$/);
-          if (!m) { erro = `Faixa inválida em ${DIAS[input.dataset.dia]}: "${parte}"`; break; }
-          faixas.push({ start: m[1].padStart(5, '0'), end: m[2].padStart(5, '0') });
-        }
-        weekly[input.dataset.dia] = faixas;
-      }
-      if (erro) return toast(erro);
-      await api(`/api/professionals/${p.id}`, { method: 'PUT', body: { weekly } });
-      toast(`Agenda de ${p.name} atualizada`);
-      await carregar();
-    });
-    bloco.append(salvarAgenda);
-    panel.append(bloco);
-  }
-
+  blocoRegras(panel);
   blocoAcesso(panel);
 }
 
@@ -1455,6 +1689,64 @@ function ligarEventos() {
     clearTimeout(agendado);
     agendado = setTimeout(() => carregar().catch(() => {}), 250);
   };
+}
+
+/** Regras dos lembretes e da agenda, sem precisar mexer no .env. */
+function blocoRegras(panel) {
+  const d = state.data;
+  panel.append(el('hr'));
+  panel.append(el('div', 'day-title', 'Lembretes e regras'));
+
+  const followUp = campoLinha('Follow-up de quem não marcou (dias, separados por vírgula)',
+    d.offsets.followUp.join(', '));
+  const antes = campoLinha('Lembretes antes da consulta (dias; o de 1 dia é o que pede confirmação)',
+    d.offsets.booking.join(', '));
+  const vaga = campoLinha('Prazo para responder a uma vaga oferecida (minutos)',
+    d.offsets.waitlistOfferMinutes, 'number');
+  const escassez = campoLinha('Só falar em "agenda enchendo" acima de (% ocupado)',
+    d.offsets.scarcityThreshold, 'number');
+  const chegada = campoLinha('Pedir para chegar quantos minutos antes',
+    d.clinic.policies.arriveMinutes, 'number');
+  const cancelamento = campoLinha('Antecedência mínima para cancelar (horas)',
+    d.clinic.policies.cancelHours, 'number');
+
+  panel.append(followUp.box, antes.box, vaga.box, escassez.box, chegada.box, cancelamento.box);
+
+  const numeros = (texto) => texto.split(',').map((n) => Number(n.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+
+  const salvar = el('button', null, 'Salvar regras');
+  salvar.addEventListener('click', async () => {
+    const listaFollowUp = numeros(followUp.input.value);
+    const listaAntes = numeros(antes.input.value);
+    if (!listaFollowUp.length || !listaAntes.length) {
+      return toast('Informe ao menos um dia em cada régua');
+    }
+    try {
+      await api('/api/clinic', {
+        method: 'PUT',
+        body: {
+          reminders: {
+            followUp: listaFollowUp,
+            booking: listaAntes.sort((a, b) => b - a),
+            waitlistOfferMinutes: Number(vaga.input.value) || 120,
+            scarcityThreshold: Number(escassez.input.value) || 80,
+          },
+          policies: {
+            ...d.clinic.policies,
+            arriveMinutes: Number(chegada.input.value) || 15,
+            cancelHours: Number(cancelamento.input.value) || 24,
+          },
+        },
+      });
+      toast('Regras atualizadas');
+      await carregar();
+    } catch (err) { toast(err.message); }
+    return undefined;
+  });
+  panel.append(salvar);
+  panel.append(el('div', 'desc',
+    'Vale para os próximos agendamentos; o que já está programado continua como foi criado.'));
 }
 
 /** Bloco "Acesso" da aba Ajustes: trocar usuário e senha. */

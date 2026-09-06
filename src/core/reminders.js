@@ -22,12 +22,18 @@ class Reminders {
   /** A agenda está cheia de verdade nos próximos dias? */
   agendaCheia() {
     if (!this.agenda) return false;
-    const limite = this.config.scarcityThreshold || 80;
+    const limite = this.regra('scarcityThreshold', this.config.scarcityThreshold || 80);
     return this.agenda.ocupacao(7).percentual >= limite;
   }
 
   get clinic() {
     return this.store.clinic;
+  }
+
+  /** Regra do painel quando existir; senão, a do .env. */
+  regra(nome, padrao) {
+    const doPainel = this.clinic.reminders ? this.clinic.reminders[nome] : undefined;
+    return doPainel === undefined || doPainel === null ? padrao : doPainel;
   }
 
   /**
@@ -36,7 +42,7 @@ class Reminders {
    */
   scheduleFollowUps(contact, from = new Date()) {
     this.store.cancelReminders((r) => r.contactId === contact.id && r.kind === 'followup');
-    return this.config.followUpOffsets.map((days) => this.store.addReminder({
+    return this.regra('followUp', this.config.followUpOffsets).map((days) => this.store.addReminder({
       contactId: contact.id,
       kind: 'followup',
       offsetDays: days,
@@ -51,7 +57,7 @@ class Reminders {
   scheduleBookingReminders(booking, now = new Date()) {
     const startsAt = new Date(booking.startsAt).getTime();
     const criados = [];
-    for (const days of this.config.bookingOffsets) {
+    for (const days of this.regra('booking', this.config.bookingOffsets)) {
       const dueAt = startsAt - days * DAY_MS;
       if (dueAt <= now.getTime()) continue; // a janela já passou
       criados.push(this.store.addReminder({

@@ -35,7 +35,8 @@ class Waitlist {
   }
 
   get prazoMs() {
-    return (this.config.waitlistOfferMinutes || 120) * 60000;
+    const doPainel = this.clinic.reminders ? this.clinic.reminders.waitlistOfferMinutes : null;
+    return (doPainel || this.config.waitlistOfferMinutes || 120) * 60000;
   }
 
   entradasDe(contactId) {
@@ -128,7 +129,7 @@ class Waitlist {
 
       const profissional = findProfessional(this.clinic, vaga.professionalId);
       await this.send(contato.phone, M.ofertaDeVaga(
-        this.clinic, contato, entrada.offer, profissional, this.config.waitlistOfferMinutes || 120,
+        this.clinic, contato, entrada.offer, profissional, Math.round(this.prazoMs / 60000),
         this.agenda.today(),
       ));
       this.store.logEvent('espera', `Vaga de ${vaga.date} ${vaga.start} oferecida para ${contato.name || contato.phone}`);

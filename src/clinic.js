@@ -102,6 +102,9 @@ const CLINICA_PADRAO = {
   // Textos reescritos pelo painel (vazio = usa o padrao de core/messages.js).
   messages: {},
 
+  // Regras dos lembretes. null = usa o que estiver no .env.
+  reminders: null,
+
   policies: {
     arriveMinutes: 15,
     cancelHours: 24,

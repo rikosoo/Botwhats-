@@ -443,7 +443,12 @@ button.ghost.danger:hover { background: rgba(211, 47, 47, .1); color: var(--dang
   border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px;
   margin-bottom: 12px; background: var(--card-2);
 }
-.msg-block .row { margin-bottom: 3px; }
+.msg-block .row { margin-bottom: 3px; gap: 10px; }
+.msg-block .row .title {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.msg-block .row button { flex: 0 0 auto; }
+.msg-block .field { margin-top: 8px; }
 .msg-block textarea {
   width: 100%; margin-top: 8px; min-height: 74px; resize: vertical;
   background: var(--bg-soft); border: 1px solid var(--line); border-radius: 9px;
