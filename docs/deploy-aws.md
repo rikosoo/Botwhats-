@@ -355,6 +355,7 @@ Chrome, pacotes, swap e sessão do WhatsApp, e diz o comando de cada pendência.
 | `https://SEU_IP` não abre | Não existe HTTPS aqui. É `http://`, e pelo túnel é `localhost` |
 | `Could not resolve hostname 18-219-126-21` | O IP foi digitado com **hífens**. É com pontos: `18.219.126.21` |
 | QR Code dá "inválido" no celular | O código expira em segundos. Leia o que está **no painel naquele instante** (ele se renova sozinho), nunca de um print ou de um log antigo |
+| `mkdir: Read-only file system` no log | O Chrome não conseguia escrever no HOME. Resolvido na versão atual: ele usa um HOME próprio dentro do projeto (`.chrome-home/`). Atualize e reinstale o serviço |
 | Painel preso em "Status: iniciando" | O Chrome não abriu. Rode `journalctl -u botwhats -n 80 --no-pager`; a causa costuma ser permissão de HOME ou memória. O `deploy/botwhats.service` novo já resolve os dois — copie-o de novo e reinicie |
 | QR sempre inválido, mesmo lendo na hora | O serviço pode estar reiniciando por memória. Veja `journalctl -u botwhats -n 50` e confirme o swap com `free -h` |
 | `ERR_EMPTY_RESPONSE` na porta 3000 | A porta responde mas o servidor fechou a conexão. Quase sempre é o serviço reiniciando: `journalctl -u botwhats -n 60 --no-pager`. Se você acabou de gerar certificado, atualize o código — a versão nova aceita http e https na mesma porta |

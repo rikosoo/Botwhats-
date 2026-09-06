@@ -1,5 +1,9 @@
 'use strict';
 
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
 /**
  * Canal real, via whatsapp-web.js (WhatsApp Web + QR Code).
  * A biblioteca e opcional: so e carregada quando CHANNEL=whatsapp.
@@ -20,6 +24,29 @@ const TIPOS_DE_MIDIA = {
   vcard: 'contato',
   multi_vcard: 'contato',
 };
+
+/**
+ * O Chrome escreve em $HOME assim que abre (cache, crashpad, mimeapps).
+ * Num servico endurecido, /home costuma estar somente-leitura e ele nem sobe —
+ * o erro aparece como "mkdir: Read-only file system" e o QR nunca chega.
+ * Por isso apontamos um HOME proprio, gravavel, dentro do projeto.
+ */
+function prepararHomeDoChrome() {
+  const candidatos = [
+    path.join(__dirname, '..', '..', '.chrome-home'),
+    path.join(os.tmpdir(), 'botwhats-chrome-home'),
+  ];
+  for (const base of candidatos) {
+    try {
+      for (const sub of ['.local/share/applications', '.config', '.cache']) {
+        fs.mkdirSync(path.join(base, sub), { recursive: true });
+      }
+      fs.accessSync(base, fs.constants.W_OK);
+      return base;
+    } catch { /* tenta o proximo */ }
+  }
+  return null;
+}
 
 class WhatsAppWebChannel {
   constructor(config) {
@@ -57,6 +84,17 @@ class WhatsAppWebChannel {
       timeout: 120000,
     };
     if (this.config.chromiumPath) puppeteer.executablePath = this.config.chromiumPath;
+
+    const home = prepararHomeDoChrome();
+    if (home) {
+      puppeteer.env = {
+        ...process.env,
+        HOME: home,
+        XDG_CONFIG_HOME: path.join(home, '.config'),
+        XDG_CACHE_HOME: path.join(home, '.cache'),
+        XDG_DATA_HOME: path.join(home, '.local', 'share'),
+      };
+    }
 
     this.client = new Client({ authStrategy: new LocalAuth(), puppeteer });
 

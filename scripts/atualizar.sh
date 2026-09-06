@@ -22,7 +22,9 @@ git pull --ff-only
 echo "→ Instalando dependências"
 PUPPETEER_SKIP_DOWNLOAD=true npm ci --omit=dev >/dev/null 2>&1 || PUPPETEER_SKIP_DOWNLOAD=true npm ci
 
-if systemctl list-unit-files 2>/dev/null | grep -q '^botwhats.service'; then
+# Checar o arquivo é mais confiável do que filtrar a saída do systemctl —
+# a versão anterior dizia "não instalado" com o serviço rodando.
+if [ -f /etc/systemd/system/botwhats.service ]; then
   echo "→ Reiniciando o serviço"
   sudo cp deploy/botwhats.service /etc/systemd/system/
   sudo systemctl daemon-reload

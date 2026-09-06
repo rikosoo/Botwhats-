@@ -5,3 +5,4 @@ data/*.json
 .env
 *.log
 certs/
+.chrome-home/
