@@ -87,6 +87,26 @@ function rangesFor(professional, dateStr) {
   return weekly[String(weekdayOf(dateStr))] || weekly[weekdayOf(dateStr)] || [];
 }
 
+/**
+ * Remove um intervalo das faixas de atendimento do dia.
+ * Bloquear das 14h às 16h numa tarde de 13h–18h deixa 13h–14h e 16h–18h —
+ * é assim que um congresso ou uma reunião entram na agenda sem fechar o dia.
+ */
+function subtrairFaixa(faixas, bloqueio) {
+  const ini = toMinutes(bloqueio.start);
+  const fim = toMinutes(bloqueio.end);
+  const resultado = [];
+
+  for (const faixa of faixas) {
+    const a = toMinutes(faixa.start);
+    const b = toMinutes(faixa.end);
+    if (fim <= a || ini >= b) { resultado.push(faixa); continue; } // não se tocam
+    if (ini > a) resultado.push({ start: faixa.start, end: fromMinutes(ini) });
+    if (fim < b) resultado.push({ start: fromMinutes(fim), end: faixa.end });
+  }
+  return resultado;
+}
+
 class Agenda {
   constructor(store, config) {
     this.store = store;
@@ -292,4 +312,5 @@ module.exports = {
   toMinutes,
   fromMinutes,
   rangesFor,
+  subtrairFaixa,
 };

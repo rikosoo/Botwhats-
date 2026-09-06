@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Recepção · Autoatendimento</title>
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 </head>
 <body>
   <div id="loginScreen" class="login-screen" hidden>
@@ -30,6 +30,8 @@
       </div>
     </div>
     <div class="topbar-right">
+      <span id="naoLidasTopo" class="nao-lidas-topo" hidden></span>
+      <button id="btnSom" class="ghost light" title="Aviso sonoro">🔔</button>
       <button id="btnLogout" class="ghost light" title="Sair do painel">Sair</button>
       <div class="status" id="openStatus"><span class="dot"></span><span class="label">—</span></div>
       <div class="status" id="channelStatus"><span class="dot"></span><span class="label">carregando…</span></div>
@@ -115,6 +117,6 @@
   </main>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=10"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

@@ -153,8 +153,11 @@ a porta do painel fechada, acesso por túnel SSH, serviço no systemd e backup d
 Seção **Equipe** do painel — tudo editável, sem tocar no código:
 
 - **Médicos**: nome (o que o paciente vê), especialidade, CRM, grade da agenda, horários por dia da
-  semana e **dias bloqueados** (férias, congresso, feriado). Dá para adicionar e remover
-  profissionais. Renomear atualiza o nome nas consultas já marcadas; remover é bloqueado enquanto
+  semana e **bloqueios** (férias, congresso, feriado, reunião). O bloqueio pode ser do dia inteiro —
+  data e nada mais — ou **só de um pedaço do dia**: preencha início e fim (14:00 às 16:00) e o resto
+  da tarde continua aberto para agendar. A linha mostra o que sobrou (`atende 08:00-12:00,
+  16:00-18:00`) e o ✕ cancela o bloqueio, devolvendo o horário normal da semana. Dá para adicionar e
+  remover profissionais. Renomear atualiza o nome nas consultas já marcadas; remover é bloqueado enquanto
   houver consulta futura no nome da pessoa — senão pacientes ficariam sem consulta e sem aviso.
 - **Tipos de atendimento**: nome, duração, valor, o que está incluso, preparo e prazo do lembrete de
   retorno. A duração define a grade de horários e o quanto a consulta ocupa na agenda.
@@ -254,7 +257,7 @@ e consulta cancelada não gera aviso.
 
 ## Painel da recepção
 
-As oito seções do painel ficam numa caixa de seleção no alto da coluna da direita — em qualquer
+As nove seções do painel ficam numa caixa de seleção no alto da coluna da direita — em qualquer
 largura de tela, nenhuma fica escondida. **Mensagens** é onde se edita o texto do bot; **Ajustes**,
 onde ficam convênios, horários e senha.
 
@@ -263,6 +266,11 @@ onde ficam convênios, horários e senha.
 - **Hoje**: agenda do dia por profissional, com botões *Confirmar*, *Compareceu*, *Faltou* e *Cancelar*.
 - **Fila e urgências**: pacientes que pediram atendente ou dispararam a triagem sobem para o topo, com selo vermelho.
 - **Conversas**: histórico em bolhas, ficha do paciente (nascimento, convênio, próxima consulta, status da confirmação), envio manual pela recepção e botão para devolver a conversa ao bot.
+- **Não lidas**: cada conversa com mensagem nova ganha um contador verde e sobe para o topo da
+  lista; o total aparece no alto do painel e no título da aba do navegador — `(3) Recepção` —
+  para a recepção ver de outra janela que chegou paciente. O filtro **Não lidas** deixa só
+  essas. Abrir a conversa marca como lida; se ela já estiver aberta, a mensagem que chega
+  entra lida. O 🔔 no alto liga e desliga o aviso sonoro (fica guardado no navegador).
 - **Simulador**: testa o atendimento inteiro sem conectar o WhatsApp — inclusive o caminho da urgência.
 - **Lembretes**: fila do que vai sair, com *enviar agora* e *cancelar*.
 - **Números**: taxa de falta dos últimos 30 dias, geral e por profissional, e o comparativo
@@ -454,6 +462,9 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `DELETE` | `/api/broadcast/:id` | Cancela um disparo ainda agendado |
 | `GET`/`PUT` | `/api/clinic` | Dados do consultório |
 | `POST`/`PUT`/`DELETE` | `/api/professionals[/:id]` | Cadastro, edição e remoção de profissionais |
+| `POST` | `/api/professionals/:id/bloqueio` | Bloqueia o dia (`{date}`) ou uma faixa (`{date, start, end}`) |
+| `DELETE` | `/api/professionals/:id/bloqueio/:date` | Cancela o bloqueio daquele dia |
+| `POST` | `/api/contacts/:id/read` | Marca a conversa como lida |
 | `POST`/`PUT`/`DELETE` | `/api/services[/:id]` | Tipos de atendimento |
 | `GET` | `/api/slots-dias?professionalId=&serviceId=` | Dias com horário livre para a combinação |
 | `GET` | `/api/health` | Status do canal e contadores |

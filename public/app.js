@@ -10,6 +10,8 @@ const state = {
   segmento: null,            // segmento que preencheu a seleção
   rascunho: localStorage.getItem('rascunhoDisparo') || '',
   encaixe: {},              // profissional/atendimento escolhidos para encaixe manual
+  som: localStorage.getItem('somNotificacao') !== 'off',
+  naoLidasAnterior: null,   // para avisar só quando chega mensagem nova
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -78,6 +80,7 @@ async function entrar(e) {
     if (!res.ok) return mostrarLogin(data.error || 'Não consegui entrar.');
     esconderLogin();
     await carregar();
+    ligarStream();          // o stream aberto antes do login levou 401
     return undefined;
   } catch {
     return mostrarLogin('Não consegui falar com o servidor.');
@@ -86,7 +89,10 @@ async function entrar(e) {
 
 async function sair() {
   await fetch('/api/logout', { method: 'POST' });
+  if (streamAtual) { streamAtual.close(); streamAtual = null; }
   state.data = null;
+  state.naoLidasAnterior = null;
+  document.title = 'Recepção · Autoatendimento';
   mostrarLogin();
 }
 
@@ -131,9 +137,41 @@ const nomePaciente = (c) => (c ? c.name || c.phone : 'Paciente');
 
 // ---------- render ----------
 
+/** Bipe curto para a recepção perceber mensagem nova sem estar olhando. */
+function tocarAviso() {
+  if (!state.som) return;
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = ctx.createOscillator();
+    const vol = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = 880;
+    vol.gain.setValueAtTime(0.0001, ctx.currentTime);
+    vol.gain.exponentialRampToValueAtTime(0.12, ctx.currentTime + 0.02);
+    vol.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.35);
+    osc.connect(vol).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.36);
+    setTimeout(() => ctx.close(), 600);
+  } catch { /* navegador sem permissão de áudio */ }
+}
+
+/** Conta as não lidas no título da aba, para aparecer com o painel em segundo plano. */
+function atualizarAvisos(total) {
+  document.title = total ? `(${total}) Recepção · Autoatendimento` : 'Recepção · Autoatendimento';
+  const anterior = state.naoLidasAnterior;
+  if (anterior !== null && total > anterior) tocarAviso();
+  state.naoLidasAnterior = total;
+
+  const marca = $('#naoLidasTopo');
+  marca.hidden = !total;
+  marca.textContent = total ? `${total} sem ler` : '';
+}
+
 function render() {
   const d = state.data;
   if (!d) return;
+  atualizarAvisos(d.naoLidasTotal || 0);
 
   $('#clinicName').textContent = d.clinic.name;
   $('#clinicSub').textContent = `${d.clinic.specialty} · assistente ${d.clinic.assistantName} · ${d.clinic.hoursText}`;
@@ -198,6 +236,7 @@ function renderKpis() {
 
 const GRUPOS = [
   ['todos', 'Todos'],
+  ['nao-lidas', 'Não lidas'],
   ['fila', 'Na fila'],
   ['urgente', 'Urgentes'],
   ['agendado', 'Agendados'],
@@ -220,6 +259,7 @@ function renderFiltros() {
 }
 
 function passaNoGrupo(c) {
+  if (state.grupo === 'nao-lidas') return !!c.naoLidas;
   if (state.grupo === 'fila') return c.stage === 'atendimento humano';
   if (state.grupo === 'urgente') return c.priority === 'urgente' || c.priority === 'atencao';
   if (state.grupo === 'agendado') return !!c.nextBooking;
@@ -237,6 +277,7 @@ function renderContacts() {
     .sort((a, b) => {
       const urgencia = (c) => (c.priority === 'urgente' ? 0 : c.stage === 'atendimento humano' ? 1 : 2);
       if (urgencia(a) !== urgencia(b)) return urgencia(a) - urgencia(b);
+      if (!!b.naoLidas !== !!a.naoLidas) return b.naoLidas ? 1 : -1;
       return new Date(b.lastMessage ? b.lastMessage.at : b.createdAt)
         - new Date(a.lastMessage ? a.lastMessage.at : a.createdAt);
     });
@@ -249,6 +290,7 @@ function renderContacts() {
   for (const c of pacientes) {
     const li = el('li');
     if (c.id === state.selected) li.classList.add('active');
+    if (c.naoLidas) li.classList.add('com-nao-lidas');
 
     const pick = el('input', 'pick');
     pick.type = 'checkbox';
@@ -272,6 +314,12 @@ function renderContacts() {
     else row.append(el('span', `badge ${c.stage.replace(/\s+/g, '-')}`, c.stage));
     li.append(row);
 
+    if (c.naoLidas) {
+      const marca = el('span', 'nao-lidas', String(c.naoLidas));
+      marca.title = `${c.naoLidas} mensagem(ns) sem ler`;
+      row.append(marca);
+    }
+
     const row2 = el('div', 'contact-row');
     row2.append(el('span', 'contact-last', c.lastMessage
       ? `${c.lastMessage.direction === 'out' ? '↩ ' : ''}${c.lastMessage.body.slice(0, 36)}`
@@ -284,12 +332,32 @@ function renderContacts() {
         `📅 ${fmtDia(c.nextBooking.startsAt)} ${c.nextBooking.start} · ${c.nextBooking.professionalName}`));
     }
 
-    li.addEventListener('click', () => {
+    li.addEventListener('click', async () => {
       state.selected = c.id;
       localStorage.setItem('pacienteSelecionado', c.id);
       render();
+      // Abrir a conversa é o que marca como lida.
+      await marcarLida(c.id, c.naoLidas);
     });
     list.append(li);
+  }
+}
+
+/**
+ * Dá a conversa por lida no servidor.
+ *
+ * `emVoo` evita repetir o pedido enquanto o primeiro não voltou: o SSE
+ * redesenha a tela várias vezes por segundo quando o bot está respondendo.
+ */
+const lidasEmVoo = new Set();
+async function marcarLida(contactId, pendentes) {
+  if (!pendentes || lidasEmVoo.has(contactId)) return;
+  lidasEmVoo.add(contactId);
+  try {
+    await api(`/api/contacts/${contactId}/read`, { method: 'POST' });
+    await carregar();
+  } catch { /* sem sessão, o login cuida */ } finally {
+    lidasEmVoo.delete(contactId);
   }
 }
 
@@ -297,6 +365,9 @@ function renderChat() {
   const box = $('#messages');
   const card = $('#patientCard');
   const paciente = pacientePorId(state.selected);
+  // Conversa aberta na tela é conversa lida: o contador vira ruído se ficar
+  // marcando o que a recepção está justamente olhando.
+  if (paciente && paciente.naoLidas) marcarLida(paciente.id, paciente.naoLidas);
   box.innerHTML = '';
   card.innerHTML = '';
   card.classList.toggle('show', !!paciente);
@@ -1237,40 +1308,67 @@ function renderEquipe() {
       entradas.push(input);
     }
 
-    // Férias e feriados: fechar um dia específico sem mexer na semana toda.
-    const bloqueadas = Object.keys(p.exceptions || {})
-      .filter((d) => Array.isArray(p.exceptions[d]) && !p.exceptions[d].length)
-      .sort();
-    bloco.append(el('div', 'day-title', 'Dias bloqueados (férias, congresso, feriado)'));
-    if (!bloqueadas.length) bloco.append(el('div', 'desc', 'Nenhum dia bloqueado.'));
-    for (const data of bloqueadas) {
+    // Férias, congressos e feriados: fechar o dia inteiro ou só um pedaço dele.
+    const excecoes = Object.entries(p.exceptions || {})
+      .filter(([, faixas]) => Array.isArray(faixas))
+      .sort(([a], [b]) => a.localeCompare(b));
+    bloco.append(el('div', 'day-title', 'Bloqueios (férias, congresso, feriado, reunião)'));
+    if (!excecoes.length) bloco.append(el('div', 'desc', 'Nenhum bloqueio.'));
+    for (const [data, faixas] of excecoes) {
       const linha = el('div', 'conv-row');
-      linha.append(el('span', 'conv-name', data.split('-').reverse().join('/')));
+      const rotulo = data.split('-').reverse().join('/');
+      linha.append(el('span', 'conv-name', rotulo));
+      linha.append(el('span', 'desc', faixas.length
+        ? `atende ${faixas.map((r) => `${r.start}-${r.end}`).join(', ')}`
+        : 'dia fechado'));
       const tirar = el('button', 'ghost', '✕');
-      tirar.title = 'Voltar a atender neste dia';
+      tirar.title = 'Cancelar o bloqueio e voltar ao horário normal';
       tirar.addEventListener('click', async () => {
-        const excecoes = { ...(p.exceptions || {}) };
-        delete excecoes[data];
-        await api(`/api/professionals/${p.id}`, { method: 'PUT', body: { exceptions: excecoes } });
-        toast('Dia liberado');
-        await carregar();
+        try {
+          await api(`/api/professionals/${p.id}/bloqueio/${data}`, { method: 'DELETE' });
+          toast('Bloqueio cancelado');
+          await carregar();
+        } catch (err) { toast(err.message); }
       });
       linha.append(tirar);
       bloco.append(linha);
     }
+    bloco.append(el('div', 'desc',
+      'Deixe os horários vazios para fechar o dia inteiro. Preenchidos, só aquele intervalo sai da agenda.'));
     const novaData = el('div', 'conv-add');
     const dataInput = el('input');
     dataInput.type = 'date';
-    const bloquear = el('button', 'ghost', 'Bloquear dia');
+    const deInput = el('input');
+    deInput.type = 'time';
+    deInput.title = 'Início do bloqueio (opcional)';
+    const ateInput = el('input');
+    ateInput.type = 'time';
+    ateInput.title = 'Fim do bloqueio (opcional)';
+    const bloquear = el('button', 'ghost', 'Bloquear');
     bloquear.addEventListener('click', async () => {
       if (!dataInput.value) return toast('Escolha a data');
-      const excecoes = { ...(p.exceptions || {}), [dataInput.value]: [] };
-      await api(`/api/professionals/${p.id}`, { method: 'PUT', body: { exceptions: excecoes } });
-      toast('Dia bloqueado');
-      await carregar();
+      const parcial = Boolean(deInput.value || ateInput.value);
+      if (parcial && !(deInput.value && ateInput.value)) {
+        return toast('Preencha os dois horários — ou deixe ambos vazios para fechar o dia');
+      }
+      if (parcial && ateInput.value <= deInput.value) {
+        return toast('O fim do bloqueio precisa ser depois do início');
+      }
+      const body = { date: dataInput.value };
+      if (parcial) { body.start = deInput.value; body.end = ateInput.value; }
+      try {
+        await api(`/api/professionals/${p.id}/bloqueio`, { method: 'POST', body });
+        toast(parcial ? 'Horário bloqueado' : 'Dia bloqueado');
+        deInput.value = '';
+        ateInput.value = '';
+        // Sem tirar o foco do campo, a proteção de digitação segura o
+        // redesenho e o bloqueio recém-criado não apareceria na lista.
+        if (document.activeElement) document.activeElement.blur();
+        await carregar();
+      } catch (err) { toast(err.message); }
       return undefined;
     });
-    novaData.append(dataInput, bloquear);
+    novaData.append(dataInput, deInput, ateInput, bloquear);
     bloco.append(novaData);
 
     const salvar = el('button', null, 'Salvar profissional');
@@ -1604,6 +1702,19 @@ async function carregar() {
 
 function ligarEventos() {
   $('#loginForm').addEventListener('submit', entrar);
+
+  const botaoSom = $('#btnSom');
+  const pintarSom = () => {
+    botaoSom.textContent = state.som ? '🔔' : '🔕';
+    botaoSom.title = state.som ? 'Aviso sonoro ligado' : 'Aviso sonoro desligado';
+  };
+  botaoSom.addEventListener('click', () => {
+    state.som = !state.som;
+    localStorage.setItem('somNotificacao', state.som ? 'on' : 'off');
+    pintarSom();
+    if (state.som) tocarAviso();
+  });
+  pintarSom();
   $('#btnLogout').addEventListener('click', sair);
 
   $('#searchContacts').addEventListener('input', (e) => {
@@ -1699,11 +1810,32 @@ function ligarEventos() {
   if (guardada && seletor.querySelector(`option[value="${guardada}"]`)) seletor.value = guardada;
   trocarSecao();
 
+  ligarStream();
+}
+
+/**
+ * Fluxo ao vivo do servidor.
+ *
+ * Antes do login o /api/stream responde 401 e o EventSource desiste de vez —
+ * o painel ficava parado até alguém recarregar a página, e mensagem nova não
+ * aparecia sozinha. Por isso a conexão é refeita depois de entrar e sempre
+ * que a linha cai.
+ */
+let streamAtual = null;
+let streamTentativa = null;
+function ligarStream() {
+  if (streamAtual) streamAtual.close();
+  clearTimeout(streamTentativa);
   const stream = new EventSource('/api/stream');
+  streamAtual = stream;
   let agendado = null;
   stream.onmessage = () => {
     clearTimeout(agendado);
     agendado = setTimeout(() => carregar().catch(() => {}), 250);
+  };
+  stream.onerror = () => {
+    if (stream.readyState !== EventSource.CLOSED) return;   // o próprio browser reconecta
+    streamTentativa = setTimeout(() => { if (streamAtual === stream) ligarStream(); }, 5000);
   };
 }
 

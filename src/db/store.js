@@ -103,6 +103,7 @@ class Store extends EventEmitter {
       lastOutboundAt: null,
       stage: 'novo',
       priority: 'normal',
+      lastReadMessageId: null,
       privacyNoticeSentAt: null,
       state: { step: 'inicio', data: {} },
       optOut: false,
@@ -111,6 +112,35 @@ class Store extends EventEmitter {
     this.state.contacts.push(contact);
     this.commit('contact', contact);
     return contact;
+  }
+
+  /**
+   * Mensagens do paciente ainda não vistas pela recepção.
+   *
+   * A marca é o id da última mensagem lida, não um horário: duas mensagens no
+   * mesmo milissegundo fariam a contagem por relógio perder uma delas.
+   */
+  naoLidas(contactId) {
+    const recebidas = this.state.messages.filter(
+      (m) => m.contactId === contactId && m.direction === 'in',
+    );
+    const contato = this.getContact(contactId);
+    if (!contato || !recebidas.length) return 0;
+    if (!contato.lastReadMessageId) return recebidas.length;
+
+    const posicao = recebidas.findIndex((m) => m.id === contato.lastReadMessageId);
+    return posicao === -1 ? recebidas.length : recebidas.length - posicao - 1;
+  }
+
+  marcarLida(contactId) {
+    const contato = this.getContact(contactId);
+    if (!contato) return null;
+    const recebidas = this.state.messages.filter(
+      (m) => m.contactId === contactId && m.direction === 'in',
+    );
+    contato.lastReadMessageId = recebidas.length ? recebidas[recebidas.length - 1].id : null;
+    this.commit('contact', contato);
+    return contato;
   }
 
   addNote(contactId, text) {

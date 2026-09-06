@@ -92,7 +92,7 @@ paciente e vê a resposta do bot na hora. Vale experimentar:
 | 🎤 **Áudio** / 📷 **Foto** | Simula mídia: o bot responde e chama a recepção |
 | `não quero mais receber mensagens` | Opt-out, cancela todos os lembretes |
 
-No alto da coluna da direita há uma **caixa de seleção** com as oito seções do painel:
+No alto da coluna da direita há uma **caixa de seleção** com as nove seções do painel:
 
 | Seção | O que tem lá |
 | --- | --- |
@@ -102,11 +102,15 @@ No alto da coluna da direita há uma **caixa de seleção** com as oito seções
 | 📣 Disparo | Mensagem para um grupo de pacientes |
 | 📊 Números | Taxa de falta, confirmou × não confirmou, ocupação |
 | 🕘 Atividade | Linha do tempo do que aconteceu |
+| 👩‍⚕️ Equipe | Médicos, especialidades, horários e **bloqueios de agenda** (dia inteiro ou só uma faixa) |
 | ✍️ Mensagens | **Editar os textos que o bot fala** |
 | ⚙️ Ajustes | **Convênios**, dados do consultório, agenda dos médicos e troca de senha |
 
 Para ver a lista de espera funcionando: cancele uma consulta futura na aba Agenda e veja a vaga
 sendo oferecida a quem está na fila.
+
+Mensagem que chega e ninguém abriu aparece com **contador verde** na lista de pacientes, no alto do
+painel e no título da aba do navegador. O 🔔 ao lado liga o aviso sonoro.
 
 ## 5. Testar com o WhatsApp de verdade (ainda local)
 

@@ -5,6 +5,7 @@ const express = require('express');
 
 const { SEGMENTOS, VARIAVEIS } = require('./core/broadcast');
 const { indicadores } = require('./core/metrics');
+const { subtrairFaixa, rangesFor } = require('./core/agenda');
 const { exportarPaciente, apagarPaciente } = require('./core/privacy');
 const { CAMPOS: CAMPOS_DE_MENSAGEM, sanitizar: sanitizarMensagens } = require('./core/templates');
 const { normalizarConvenios, conveniosAtivos } = require('./clinic');
@@ -121,7 +122,9 @@ function createServer(app) {
         messageCount: store.messagesOf(c.id).length,
         lastMessage: store.messagesOf(c.id).slice(-1)[0] || null,
         nextBooking: agenda.nextBookingOf(c.id),
+        naoLidas: store.naoLidas(c.id),
       })),
+      naoLidasTotal: store.state.contacts.reduce((total, c) => total + store.naoLidas(c.id), 0),
       messages: store.state.messages.slice(-800),
       reminders: store.state.reminders,
       bookings: store.state.bookings,
@@ -219,6 +222,12 @@ function createServer(app) {
     const resumo = apagarPaciente(store, req.params.id);
     if (!resumo) return res.status(404).json({ error: 'paciente não encontrado' });
     return res.json(resumo);
+  });
+
+  server.post('/api/contacts/:id/read', (req, res) => {
+    const contact = store.marcarLida(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
+    return res.json({ ok: true, naoLidas: 0 });
   });
 
   server.post('/api/contacts/:id/followups', (req, res) => {
@@ -551,6 +560,50 @@ function createServer(app) {
     store.clinic.professionals = store.clinic.professionals.filter((p) => p.id !== profissional.id);
     store.commit('clinic', store.clinic);
     store.logEvent('config', `${profissional.name} removido da equipe`);
+    return res.json({ ok: true });
+  });
+
+  /**
+   * Bloqueia um dia inteiro ou só um intervalo dele.
+   * Com `start` e `end`, o que sobra do expediente continua aberto — é assim
+   * que um congresso à tarde entra sem fechar a manhã.
+   */
+  server.post('/api/professionals/:id/bloqueio', (req, res) => {
+    const profissional = store.clinic.professionals.find((p) => p.id === req.params.id);
+    if (!profissional) return res.status(404).json({ error: 'profissional não encontrado' });
+
+    const { date, start, end } = req.body || {};
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ''))) {
+      return res.status(400).json({ error: 'informe a data no formato AAAA-MM-DD' });
+    }
+    profissional.exceptions = profissional.exceptions || {};
+
+    if (!start || !end) {
+      profissional.exceptions[date] = [];                       // dia fechado
+    } else {
+      if (!/^\d{1,2}:\d{2}$/.test(start) || !/^\d{1,2}:\d{2}$/.test(end) || end <= start) {
+        return res.status(400).json({ error: 'horário inválido: use 14:00 e 16:00, nessa ordem' });
+      }
+      const atuais = rangesFor(profissional, date);
+      profissional.exceptions[date] = subtrairFaixa(atuais, { start, end });
+    }
+
+    store.commit('clinic', store.clinic);
+    store.logEvent('agenda', start && end
+      ? `${profissional.name}: ${start}–${end} bloqueado em ${date}`
+      : `${profissional.name}: dia ${date} bloqueado`);
+    return res.json({ date, ranges: profissional.exceptions[date] });
+  });
+
+  server.delete('/api/professionals/:id/bloqueio/:date', (req, res) => {
+    const profissional = store.clinic.professionals.find((p) => p.id === req.params.id);
+    if (!profissional) return res.status(404).json({ error: 'profissional não encontrado' });
+    if (!profissional.exceptions || !(req.params.date in profissional.exceptions)) {
+      return res.status(404).json({ error: 'não há bloqueio nessa data' });
+    }
+    delete profissional.exceptions[req.params.date];
+    store.commit('clinic', store.clinic);
+    store.logEvent('agenda', `${profissional.name}: bloqueio de ${req.params.date} liberado`);
     return res.json({ ok: true });
   });
 
