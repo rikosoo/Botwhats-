@@ -85,6 +85,59 @@ try {
   }
 } catch { /* fora do Linux, tudo bem */ }
 
+// ---------- o servidor está mesmo respondendo? ----------
+
+/** Faz uma requisição de verdade e conta o que voltou. */
+function bater(protocolo) {
+  return new Promise((resolve) => {
+    const lib = protocolo === 'https' ? require('https') : require('http');
+    const req = lib.request({
+      host: '127.0.0.1',
+      port: config.port,
+      path: '/api/ping',
+      method: 'GET',
+      timeout: 4000,
+      rejectUnauthorized: false,
+    }, (res) => {
+      let corpo = '';
+      res.on('data', (p) => { corpo += p; });
+      res.on('end', () => resolve({
+        status: res.statusCode,
+        local: res.headers.location || null,
+        corpo: corpo.slice(0, 80),
+      }));
+    });
+    req.on('timeout', () => { req.destroy(); resolve({ erro: 'sem resposta (timeout)' }); });
+    req.on('error', (err) => resolve({ erro: err.message }));
+    req.end();
+  });
+}
+
+async function testarServidor() {
+  const resultado = { http: await bater('http'), https: await bater('https') };
+  const conta = (nome, r) => {
+    if (r.erro) return `  ❌ ${nome}: ${r.erro}`;
+    if (r.local) return `  ↪️  ${nome}: ${r.status} redirecionando para ${r.local}`;
+    if (r.status === 200 && r.corpo.includes('"ok"')) return `  ✅ ${nome}: respondeu 200`;
+    return `  ℹ️  ${nome}: respondeu ${r.status}`;
+  };
+
+  console.log('\n  Testando o servidor em 127.0.0.1:' + config.port);
+  console.log(conta('http ', resultado.http));
+  console.log(conta('https', resultado.https));
+
+  const nenhum = resultado.http.erro && resultado.https.erro;
+  if (nenhum) {
+    console.log('\n  O servidor não respondeu em nenhum dos dois. Verifique:');
+    console.log('    systemctl status botwhats --no-pager | head -8');
+    console.log('    journalctl -u botwhats -n 40 --no-pager');
+    console.log('    pgrep -af "node src/index.js"   # mais de um processo disputando a porta?');
+  } else {
+    const bom = resultado.https.status === 200 ? 'https' : 'http';
+    console.log(`\n  Use ${bom}://SEU_IP:${config.port} no navegador.`);
+  }
+}
+
 // ---------- como acessar ----------
 
 console.log('\n  Diagnóstico do Botwhats\n');
@@ -110,5 +163,7 @@ if (problemas.length) {
   problemas.forEach((p, i) => console.log(`    ${i + 1}. ${p}`));
   process.exitCode = 1;
 } else {
-  console.log('\n  Nada pendente. 🎉\n');
+  console.log('\n  Nada pendente na configuração. 🎉');
 }
+
+testarServidor().then(() => console.log(''));
