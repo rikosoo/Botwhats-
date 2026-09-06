@@ -128,7 +128,21 @@ class WhatsAppWebChannel {
 
     this.client.on('message', async (msg) => {
       if (!this.onMessage) return;
-      if (msg.from.endsWith('@g.us')) return; // ignora grupos
+      if (msg.from.endsWith('@g.us')) return;            // grupos
+      if (msg.from === 'status@broadcast' || msg.isStatus) return; // status
+
+      /*
+       * Ao conectar, o WhatsApp entrega tudo o que chegou enquanto o numero
+       * esteve offline — inclusive conversas de semanas atras. Sem esta
+       * checagem o bot responde todas de uma vez, e o paciente recebe do nada
+       * uma resposta para uma mensagem antiga.
+       *
+       * Mensagem velha e registrada no painel e mandada para a fila da
+       * recepcao, mas nao recebe resposta automatica.
+       */
+      const quando = Number(msg.timestamp || 0) * 1000;
+      const limite = (this.config.ignoreOlderThanMinutes || 10) * 60000;
+      const antiga = quando > 0 && Date.now() - quando > limite;
 
       // Audio, foto e documento nao podem cair no vazio: o paciente acha que
       // falou com o consultorio e ninguem respondeu.
@@ -145,6 +159,7 @@ class WhatsAppWebChannel {
         name,
         body: msg.body || '',
         mediaType,
+        antiga,
       });
     });
 

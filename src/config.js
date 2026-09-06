@@ -30,6 +30,11 @@ const config = {
   chromiumPath: process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,
   dataFile: process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json'),
 
+  // Mensagem que chegou ha mais tempo que isso (min) e registrada, mas nao
+  // recebe resposta automatica — evita o bot responder a fila inteira ao
+  // conectar, incluindo conversas antigas.
+  ignoreOlderThanMinutes: Number(process.env.IGNORE_OLDER_THAN_MINUTES || 10),
+
   // Pausa entre mensagens seguidas, para a conversa nao chegar em bloco
   // (0 desliga; no simulador e nos testes fica desligado).
   typingDelayMs: Number(process.env.TYPING_DELAY_MS || 1200),

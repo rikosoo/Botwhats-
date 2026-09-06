@@ -155,3 +155,22 @@ test('o simulador responde 409 com texto útil quando a entrega falha', async ()
     await p.fechar();
   }
 });
+
+test('mensagem antiga entregue na conexão não recebe resposta automática', async () => {
+  const { makeApp: criar } = require('./helpers');
+  const app = criar();
+  const phone = '5511900091111';
+
+  // O que o WhatsApp entrega ao conectar: conversas que já estavam esperando.
+  await app.handleIncoming({ phone, name: 'Paciente Antigo', body: 'oi, tudo bem?', antiga: true });
+
+  assert.strictEqual(app.sent.length, 0, 'ninguém recebe resposta do nada');
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.stage, 'atendimento humano', 'mas vai para a fila da recepção');
+  assert.strictEqual(app.store.messagesOf(paciente.id).length, 1, 'e a mensagem fica registrada');
+  assert.match(paciente.notes.slice(-1)[0].text, /antes da conexão/);
+
+  // Se essa mesma pessoa escrever de novo, aí sim o bot atende.
+  await app.handleIncoming({ phone, body: 'oi' });
+  assert.ok(app.sent.length > 0);
+});

@@ -356,6 +356,7 @@ Chrome, pacotes, swap e sessão do WhatsApp, e diz o comando de cada pendência.
 | `https://SEU_IP` não abre | Não existe HTTPS aqui. É `http://`, e pelo túnel é `localhost` |
 | `Could not resolve hostname 18-219-126-21` | O IP foi digitado com **hífens**. É com pontos: `18.219.126.21` |
 | QR Code dá "inválido" no celular | O código expira em segundos. Leia o que está **no painel naquele instante** (ele se renova sozinho), nunca de um print ou de um log antigo |
+| O bot respondeu conversas antigas ao conectar | Era o WhatsApp entregando a fila acumulada offline. Corrigido: mensagem com mais de 10 minutos é registrada e vai para a fila da recepção, sem resposta automática (`IGNORE_OLDER_THAN_MINUTES`) |
 | `Cannot read properties of undefined (reading 'getChat')` | Era o envio tentando sair com o WhatsApp ainda desconectado. A versão atual avisa em português, marca a mensagem como não entregue no painel e mostra uma faixa acima do campo de digitação |
 | `mkdir: Read-only file system` no log | O Chrome não conseguia escrever no HOME. Resolvido na versão atual: ele usa um HOME próprio dentro do projeto (`.chrome-home/`). Atualize e reinstale o serviço |
 | Painel preso em "Status: iniciando" | O Chrome não abriu. Rode `journalctl -u botwhats -n 80 --no-pager`; a causa costuma ser permissão de HOME ou memória. O `deploy/botwhats.service` novo já resolve os dois — copie-o de novo e reinicie |

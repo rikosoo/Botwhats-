@@ -64,8 +64,8 @@ function createApp(config, { channel } = {}) {
       .catch((err) => console.error('[espera]', err));
   };
 
-  const handleIncoming = async ({ phone, name, body, mediaType = null }) => {
-    const replies = await bot.handleIncoming({ phone, name, body, mediaType });
+  const handleIncoming = async ({ phone, name, body, mediaType = null, antiga = false }) => {
+    const replies = await bot.handleIncoming({ phone, name, body, mediaType, antiga });
     let falha = null;
     for (const reply of replies) {
       try {

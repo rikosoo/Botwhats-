@@ -32,7 +32,7 @@ class Bot {
     return this.store.clinic;
   }
 
-  async handleIncoming({ phone, name, body, mediaType = null }) {
+  async handleIncoming({ phone, name, body, mediaType = null, antiga = false }) {
     const contato = this.store.upsertContact(phone, name);
     const primeiraVez = this.store.messagesOf(contato.id).length === 0;
     this.store.addMessage(
@@ -41,6 +41,16 @@ class Bot {
       mediaType ? `[${mediaType}]` : body,
       mediaType ? { mediaType } : {},
     );
+
+    // Mensagem que já estava esperando quando o número conectou: responder
+    // agora seria responder do nada uma conversa de semanas atrás.
+    if (antiga) {
+      contato.stage = 'atendimento humano';
+      this.store.addNote(contato.id, 'Mensagem recebida antes da conexão — sem resposta automática');
+      this.store.logEvent('midia', `Mensagem antiga de ${contato.name || contato.phone} — encaminhada para a recepção`);
+      this.store.commit('contact', contato);
+      return [];
+    }
 
     // Desligado, o bot não responde nada — mas a mensagem entra no painel e o
     // paciente vai para a fila, senão ninguém percebe que chegou.

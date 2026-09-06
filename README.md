@@ -88,6 +88,16 @@ data, profissional, duração e se compareceu — nada que identifique alguém.
 Além disso, conversas com mais de `MESSAGE_RETENTION_DAYS` (padrão: 365) são apagadas
 automaticamente. Cadastro e histórico de consultas continuam.
 
+## Conversas antigas na hora de conectar
+
+Quando o número conecta, o WhatsApp entrega tudo o que chegou enquanto ele esteve offline —
+inclusive conversas de semanas atrás. Responder isso de uma vez faria o paciente receber, do nada,
+uma resposta para uma mensagem antiga.
+
+Por isso, mensagem com mais de `IGNORE_OLDER_THAN_MINUTES` (padrão: 10 minutos) é **registrada no
+painel e mandada para a fila da recepção, sem resposta automática**. Se a pessoa escrever de novo,
+aí sim o bot atende normalmente. Grupos e status também são ignorados.
+
 ## Quando o WhatsApp não está conectado
 
 O painel continua funcionando: as mensagens são processadas e ficam no histórico, marcadas como
@@ -386,6 +396,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `PORT` | `3000` | Porta do painel |
 | `HOST` | `0.0.0.0` | Endereço de escuta; use `127.0.0.1` em servidor exposto |
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
+| `IGNORE_OLDER_THAN_MINUTES` | `10` | Mensagem mais antiga que isso não recebe resposta automática |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
 | `MESSAGE_RETENTION_DAYS` | `365` | Apaga conversas mais antigas que isso (0 desliga) |
@@ -468,7 +479,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 126 testes com node:test
+test/                 127 testes com node:test
 ```
 
 ## Testes
