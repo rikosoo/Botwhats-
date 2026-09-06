@@ -8,6 +8,7 @@ const { Broadcast } = require('./core/broadcast');
 const { Waitlist } = require('./core/waitlist');
 const { Auth } = require('./core/auth');
 const { Retencao } = require('./core/privacy');
+const { GoogleCalendar } = require('./integrations/google');
 const { MockChannel } = require('./channels/mock');
 const { WhatsAppWebChannel } = require('./channels/whatsappWeb');
 
@@ -58,6 +59,24 @@ function createApp(config, { channel } = {}) {
   const retencao = new Retencao(store, config);
   bot.waitlist = waitlist;
 
+  // Google Agenda: a consulta marcada aqui aparece no calendário do médico, e
+  // o compromisso que ele marcou no celular deixa de ser oferecido ao paciente.
+  const google = new GoogleCalendar(store, config);
+  agenda.ocupadosExternos = (dateStr, professionalId) => google.ocupadosEm(dateStr, professionalId);
+
+  // Toda mudança de consulta passa por commit('booking'): é o único ponto que
+  // precisa saber do Google. A fila serializa os envios — dois refreshes de
+  // token ao mesmo tempo custam uma chamada recusada.
+  let fila = Promise.resolve();
+  store.on('change', ({ type, payload }) => {
+    if (type !== 'booking' || !payload || !google.ativo()) return;
+    fila = fila
+      .then(() => google.sincronizar(payload))
+      .then(() => store.save())
+      .catch((err) => console.error('[google]', err.message));
+  });
+  google.fila = () => fila;
+
   // Horário desmarcado é vaga: quem está esperando ouve primeiro.
   agenda.onSlotFreed = (booking) => {
     waitlist.emAndamento = waitlist.oferecerVaga(waitlist.vagaDe(booking))
@@ -83,7 +102,7 @@ function createApp(config, { channel } = {}) {
   chan.onMessage = handleIncoming;
 
   return {
-    config, store, agenda, reminders, bot, broadcast, waitlist, auth, retencao,
+    config, store, agenda, reminders, bot, broadcast, waitlist, auth, retencao, google,
     channel: chan, sendText, handleIncoming,
   };
 }

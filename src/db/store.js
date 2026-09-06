@@ -18,6 +18,7 @@ function emptyState() {
     waitlist: [],
     users: [],
     sessions: [],
+    integrations: {},
     clinic: structuredClone(CLINICA_PADRAO),
   };
 }
@@ -43,6 +44,7 @@ class Store extends EventEmitter {
       };
       // Bancos gravados antes do cadastro de convênios guardavam só os nomes.
       this.state.clinic.insurances = normalizarConvenios(this.state.clinic.insurances);
+      this.state.integrations = { ...(parsed.integrations || {}) };
     } catch (err) {
       console.error('[store] falha ao ler o banco, iniciando vazio:', err.message);
       this.state = emptyState();

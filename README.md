@@ -295,6 +295,26 @@ digitar fica logo acima da barra, com a ficha do paciente e as ações guardadas
 
 ![aba de números](docs/numeros.png)
 
+## Google Agenda
+
+O médico não abre o painel — ele olha o calendário do celular. Em **Ajustes → 📅 Google Agenda** dá
+para conectar a conta do consultório: a consulta marcada pelo bot ou pela recepção vira evento no
+Google (com paciente, WhatsApp, tipo de atendimento, profissional e convênio na descrição), e
+remarcar, confirmar ou cancelar aqui muda lá.
+
+O caminho de volta é opcional e vale a pena: com **"não oferecer horários que já estão ocupados no
+Google"** ligado, o compromisso que o médico marcou no celular deixa de ser oferecido ao paciente em
+até cinco minutos. Eventos marcados como *disponível* no Google não contam, e o painel não bloqueia
+duas vezes os eventos que ele mesmo criou.
+
+Conectar exige uma credencial própria no Google Cloud (de graça, uma vez só) — o Google não empresta
+credencial de terceiros para escrever numa agenda. O passo a passo, com as telas e os erros comuns,
+está em [`docs/google-agenda.md`](docs/google-agenda.md).
+
+Uma falha do Google nunca derruba a consulta: ela fica marcada aqui, o erro aparece no painel e a
+próxima alteração tenta de novo. **Desconectar** revoga o acesso do lado do Google, não só apaga
+daqui.
+
 ## Disparo de mensagens da recepção
 
 Quando você quer falar com um grupo de pacientes — "abrimos horários extras na sexta",
@@ -482,6 +502,11 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `POST`/`PUT`/`DELETE` | `/api/services[/:id]` | Tipos de atendimento |
 | `GET` | `/api/slots-dias?professionalId=&serviceId=` | Dias com horário livre para a combinação |
 | `GET` | `/api/semana?inicio=AAAA-MM-DD` | Sete dias com consultas, livres e dias fechados |
+| `GET`/`PUT` | `/api/google` | Estado da integração (sem segredos) e credenciais OAuth |
+| `GET` | `/api/google/autorizar` | URL de consentimento do Google |
+| `GET`/`POST` | `/api/google/callback`, `/api/google/conectar` | Conclui a conexão (volta do Google ou URL colada) |
+| `POST` | `/api/google/opcoes` | Liga/desliga envio, bloqueio de ocupados, calendário e profissional |
+| `POST` | `/api/google/sincronizar`, `/api/google/desconectar` | Reenvia consultas futuras · revoga o acesso |
 | `GET` | `/api/health` | Status do canal e contadores |
 
 ## Estrutura
@@ -506,9 +531,10 @@ src/
   core/templates.js   mensagens editáveis pelo painel
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
+  integrations/       Google Agenda (OAuth e eventos)
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 127 testes com node:test
+test/                 156 testes com node:test
 ```
 
 ## Testes

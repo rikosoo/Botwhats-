@@ -104,7 +104,7 @@ No alto da coluna da direita há uma **caixa de seleção** com as nove seções
 | 🕘 Atividade | Linha do tempo do que aconteceu |
 | 👩‍⚕️ Equipe | Médicos, especialidades, horários e **bloqueios de agenda** (dia inteiro ou só uma faixa) |
 | ✍️ Mensagens | **Editar os textos que o bot fala** |
-| ⚙️ Ajustes | **Convênios**, dados do consultório, agenda dos médicos e troca de senha |
+| ⚙️ Ajustes | **Convênios**, dados do consultório, **Google Agenda**, agenda dos médicos e troca de senha |
 
 Para ver a lista de espera funcionando: cancele uma consulta futura na aba Agenda e veja a vaga
 sendo oferecida a quem está na fila.

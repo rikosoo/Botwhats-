@@ -82,6 +82,20 @@ async function main() {
   app.waitlist.start();
   app.retencao.start();
 
+  /**
+   * Compromissos do Google entram como horário ocupado. A releitura periódica
+   * é o que mantém isso honesto: o médico marca no celular e, minutos depois,
+   * o bot deixa de oferecer aquele horário.
+   */
+  const relerGoogle = () => {
+    app.google.atualizarOcupados().catch((err) => console.error('[google]', err.message));
+  };
+  if (app.google.ativo() && app.google.conf.bloquearOcupados) relerGoogle();
+  const timerGoogle = setInterval(() => {
+    if (app.google.ativo() && app.google.conf.bloquearOcupados) relerGoogle();
+  }, config.googleSyncMs);
+  if (timerGoogle.unref) timerGoogle.unref();
+
   ouvinte.listen(config.port, config.host, () => {
     const clinica = app.store.clinic;
     const esquema = certificado ? 'https' : 'http';
@@ -107,6 +121,7 @@ async function main() {
     app.reminders.stop();
     app.waitlist.stop();
     app.retencao.stop();
+    clearInterval(timerGoogle);
     app.store.saveNow();
     try { await app.channel.stop(); } catch { /* ignora */ }
     process.exit(0);

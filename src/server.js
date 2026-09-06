@@ -11,7 +11,7 @@ const { CAMPOS: CAMPOS_DE_MENSAGEM, sanitizar: sanitizarMensagens } = require('.
 const { normalizarConvenios, conveniosAtivos } = require('./clinic');
 
 function createServer(app) {
-  const { store, agenda, reminders, broadcast, waitlist, auth, channel, config } = app;
+  const { store, agenda, reminders, broadcast, waitlist, auth, channel, config, google } = app;
   const server = express();
   server.use(express.json());
   // O painel é atualizado junto com o código: sem isto, o navegador continua
@@ -125,6 +125,7 @@ function createServer(app) {
         naoLidas: store.naoLidas(c.id),
       })),
       naoLidasTotal: store.state.contacts.reduce((total, c) => total + store.naoLidas(c.id), 0),
+      google: google ? google.estado() : null,
       messages: store.state.messages.slice(-800),
       reminders: store.state.reminders,
       bookings: store.state.bookings,
@@ -366,6 +367,94 @@ function createServer(app) {
     reminder.status = 'cancelado';
     store.commit('reminder', reminder);
     return res.json(reminder);
+  });
+
+  // ---------- Google Agenda ----------
+
+  server.get('/api/google', (req, res) => res.json(google.estado()));
+
+  server.put('/api/google', (req, res) => {
+    const { clientId, clientSecret, redirectUri } = req.body || {};
+    return res.json(google.guardarCredenciais({ clientId, clientSecret, redirectUri }));
+  });
+
+  /** URL do consentimento — o painel abre numa aba nova. */
+  server.get('/api/google/autorizar', (req, res) => {
+    try {
+      return res.json({ url: google.urlDeAutorizacao(), redirectUri: google.estado().redirectUri });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  /**
+   * Volta do Google. Só funciona quando o painel atende no endereço de
+   * redirecionamento (o túnel SSH em localhost); fora disso a recepção cola a
+   * URL inteira no campo do painel, que cai em POST /api/google/conectar.
+   */
+  server.get('/api/google/callback', async (req, res) => {
+    const pagina = (titulo, corpo) => `<!doctype html><meta charset="utf-8"><title>${titulo}</title>
+<style>body{font:16px/1.6 system-ui,sans-serif;max-width:34rem;margin:12vh auto;padding:0 1.5rem;color:#17222d}</style>
+<h1>${titulo}</h1>${corpo}`;
+    if (req.query.error) {
+      return res.status(400).type('html').send(pagina('Autorização cancelada',
+        '<p>O Google não liberou o acesso. Você pode tentar de novo pelo painel.</p>'));
+    }
+    try {
+      await google.conectar(String(req.query.code || ''));
+      return res.type('html').send(pagina('Google Agenda conectado',
+        '<p>Pode fechar esta aba e voltar para o painel.</p>'));
+    } catch (err) {
+      return res.status(400).type('html').send(pagina('Não consegui conectar',
+        `<p>${err.message}</p>`));
+    }
+  });
+
+  server.post('/api/google/conectar', async (req, res) => {
+    try {
+      const estado = await google.conectar(String((req.body || {}).codigo || ''));
+      const resumo = await google.sincronizarFuturas();
+      store.logEvent('agenda', `Google Agenda conectado (${estado.conta || 'conta do consultório'})`
+        + ` — ${resumo.enviadas} consulta(s) enviada(s)`);
+      return res.json({ ...estado, ...resumo });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  server.post('/api/google/desconectar', async (req, res) => {
+    const estado = await google.desconectar();
+    store.logEvent('agenda', 'Google Agenda desconectado');
+    return res.json(estado);
+  });
+
+  server.get('/api/google/calendarios', async (req, res) => {
+    try {
+      return res.json({ calendarios: await google.listarCalendarios() });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  });
+
+  server.post('/api/google/opcoes', async (req, res) => {
+    const { enabled, bloquearOcupados, calendarId, calendarName, professionalId } = req.body || {};
+    if (enabled !== undefined) google.ligar(enabled);
+    if (bloquearOcupados !== undefined) google.bloquearOcupados(bloquearOcupados);
+    if (calendarId) google.escolherCalendario(calendarId, calendarName);
+    if (professionalId !== undefined) google.escolherProfissional(professionalId);
+    if (google.ativo() && google.conf.bloquearOcupados) await google.atualizarOcupados();
+    return res.json(google.estado());
+  });
+
+  /** Reenvia as consultas futuras — útil depois de trocar de calendário. */
+  server.post('/api/google/sincronizar', async (req, res) => {
+    try {
+      const resumo = await google.sincronizarFuturas();
+      if (google.conf.bloquearOcupados) await google.atualizarOcupados();
+      return res.json({ ...google.estado(), ...resumo });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
   });
 
   // ---------- conexão do WhatsApp ----------

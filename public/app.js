@@ -1850,8 +1850,189 @@ function renderConfig() {
   panel.append(salvar);
 
   blocoWhatsApp(panel);
+  blocoGoogle(panel);
   blocoRegras(panel);
   blocoAcesso(panel);
+}
+
+/**
+ * Google Agenda.
+ *
+ * O médico não abre o painel: ele olha o calendário do celular. Conectando
+ * aqui, a consulta marcada pelo bot aparece lá — e o compromisso que ele marca
+ * lá deixa de ser oferecido ao paciente.
+ *
+ * As credenciais são do consultório (criadas no Google Cloud, uma vez). Não
+ * existe atalho: o Google não empresta credenciais de terceiros para escrever
+ * na agenda de alguém.
+ */
+function blocoGoogle(panel) {
+  const g = state.data.google;
+  if (!g) return;
+  panel.append(el('hr'));
+  panel.append(el('div', 'day-title', '📅 Google Agenda'));
+
+  const caixa = el('div', 'item');
+  panel.append(caixa);
+
+  if (g.conectado) {
+    caixa.append(el('div', 'title', `✅ Conectado — ${g.conta || 'conta do Google'}`));
+    caixa.append(el('div', 'desc',
+      `Calendário: ${g.calendarName || g.calendarId}`
+      + (g.lastSyncAt ? ` · última troca ${fmtDataHora(g.lastSyncAt)}` : '')));
+    if (g.lastError) caixa.append(el('div', 'warn-note', `Último erro: ${g.lastError}`));
+
+    const ligado = el('label', 'switch-row');
+    const marcaLigado = el('input');
+    marcaLigado.type = 'checkbox';
+    marcaLigado.checked = g.enabled;
+    marcaLigado.addEventListener('change', () => salvarOpcoesGoogle({ enabled: marcaLigado.checked }));
+    ligado.append(marcaLigado, el('span', null, 'Mandar as consultas para o Google Agenda'));
+    caixa.append(ligado);
+
+    const bloqueio = el('label', 'switch-row');
+    const marcaBloqueio = el('input');
+    marcaBloqueio.type = 'checkbox';
+    marcaBloqueio.checked = g.bloquearOcupados;
+    marcaBloqueio.addEventListener('change',
+      () => salvarOpcoesGoogle({ bloquearOcupados: marcaBloqueio.checked }));
+    bloqueio.append(marcaBloqueio,
+      el('span', null, 'Não oferecer horários que já estão ocupados no Google'));
+    caixa.append(bloqueio);
+    caixa.append(el('div', 'desc',
+      'Com esta opção, um compromisso marcado no celular do médico some da lista de horários '
+      + 'livres em até cinco minutos. Eventos marcados como "disponível" no Google não contam.'));
+
+    // Com mais de um médico, uma conta do Google não pode bloquear a agenda
+    // de todos: escolha de quem é este calendário.
+    if (state.data.clinic.professionals.length > 1) {
+      const escolha = el('div', 'field');
+      escolha.append(el('label', null, 'Este calendário é de qual profissional?'));
+      const select = el('select');
+      const todos = el('option', null, 'Consultório inteiro');
+      todos.value = '';
+      select.append(todos);
+      for (const p of state.data.clinic.professionals) {
+        const op = el('option', null, p.name);
+        op.value = p.id;
+        select.append(op);
+      }
+      select.value = g.professionalId || '';
+      select.addEventListener('change', () => salvarOpcoesGoogle({ professionalId: select.value }));
+      escolha.append(select);
+      caixa.append(escolha);
+    }
+
+    const acoes = el('div', 'send-row');
+    const trocar = el('button', 'ghost', 'Trocar de calendário');
+    trocar.addEventListener('click', async () => {
+      try {
+        const { calendarios } = await api('/api/google/calendarios');
+        if (!calendarios.length) return toast('Nenhum calendário com permissão de escrita');
+        const opcoes = calendarios.map((c, i) => `${i + 1}) ${c.nome}`).join('\n');
+        const escolha = prompt(`Qual calendário usar?\n\n${opcoes}`, '1');
+        const alvo = calendarios[Number(escolha) - 1];
+        if (!alvo) return undefined;
+        await api('/api/google/opcoes', {
+          method: 'POST', body: { calendarId: alvo.id, calendarName: alvo.nome },
+        });
+        toast(`Agora usando "${alvo.nome}"`);
+        await carregar();
+      } catch (err) { toast(err.message); }
+      return undefined;
+    });
+
+    const reenviar = el('button', 'ghost', 'Reenviar consultas futuras');
+    reenviar.addEventListener('click', async () => {
+      try {
+        const r = await api('/api/google/sincronizar', { method: 'POST' });
+        toast(`${r.enviadas} consulta(s) enviada(s) de ${r.total}`);
+        await carregar();
+      } catch (err) { toast(err.message); }
+    });
+
+    const sair = el('button', 'ghost danger', 'Desconectar');
+    sair.addEventListener('click', async () => {
+      if (!confirm('Desconectar o Google Agenda? As consultas já enviadas continuam lá.')) return;
+      await api('/api/google/desconectar', { method: 'POST' });
+      toast('Google Agenda desconectado');
+      await carregar();
+    });
+
+    acoes.append(trocar, reenviar, sair);
+    caixa.append(acoes);
+    return;
+  }
+
+  // --- ainda não conectado ---
+  caixa.append(el('div', 'desc',
+    'Para ligar, o consultório precisa de uma credencial própria no Google (é de graça e se faz '
+    + 'uma vez só). O passo a passo está em docs/google-agenda.md.'));
+
+  const id = campoLinha('ID do cliente OAuth', g.clientId);
+  id.input.placeholder = '000000-abc.apps.googleusercontent.com';
+  const segredo = campoLinha('Chave secreta do cliente', '');
+  segredo.input.type = 'password';
+  segredo.input.placeholder = g.configurado ? '•••••• (guardada)' : 'GOCSPX-…';
+  const redirecionamento = campoLinha('URL de redirecionamento autorizada', g.redirectUri);
+  caixa.append(id.box, segredo.box, redirecionamento.box);
+  caixa.append(el('div', 'desc',
+    'Cole essa mesma URL de redirecionamento no Google Cloud, em "URIs de redirecionamento '
+    + 'autorizados" do cliente OAuth.'));
+
+  const salvar = el('button', 'ghost', 'Salvar credenciais');
+  salvar.addEventListener('click', async () => {
+    try {
+      await api('/api/google', {
+        method: 'PUT',
+        body: {
+          clientId: id.input.value.trim(),
+          clientSecret: segredo.input.value.trim(),
+          redirectUri: redirecionamento.input.value.trim(),
+        },
+      });
+      toast('Credenciais salvas');
+      await carregar();
+    } catch (err) { toast(err.message); }
+  });
+  caixa.append(salvar);
+
+  if (!g.configurado) return;
+
+  caixa.append(el('hr'));
+  const conectar = el('button', null, '🔗 Conectar com o Google');
+  conectar.addEventListener('click', async () => {
+    try {
+      const { url } = await api('/api/google/autorizar');
+      window.open(url, '_blank', 'noopener');
+      toast('Autorize na aba que abriu e volte para colar o endereço final');
+    } catch (err) { toast(err.message); }
+  });
+  caixa.append(conectar);
+
+  // Quando o painel não atende no endereço de redirecionamento, o navegador
+  // mostra erro depois de autorizar — mas o código está na barra de endereço.
+  const colar = campoLinha('Deu erro na volta? Cole aqui o endereço da barra do navegador', '');
+  colar.input.placeholder = 'http://localhost:3000/api/google/callback?code=…';
+  caixa.append(colar.box);
+  const concluir = el('button', 'ghost', 'Concluir conexão');
+  concluir.addEventListener('click', async () => {
+    if (!colar.input.value.trim()) return toast('Cole o endereço para onde o Google te levou');
+    try {
+      const r = await api('/api/google/conectar', { method: 'POST', body: { codigo: colar.input.value } });
+      toast(`Conectado — ${r.enviadas} consulta(s) enviada(s)`);
+      await carregar();
+    } catch (err) { toast(err.message); }
+    return undefined;
+  });
+  caixa.append(concluir);
+}
+
+async function salvarOpcoesGoogle(body) {
+  try {
+    await api('/api/google/opcoes', { method: 'POST', body });
+    await carregar();
+  } catch (err) { toast(err.message); }
 }
 
 // ---------- ações ----------

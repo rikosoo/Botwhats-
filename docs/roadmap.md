@@ -220,6 +220,11 @@ existe.
 
 ## D. Integração com a agenda que o consultório já usa
 
+> ✅ **Implementado para o Google Agenda** (`src/integrations/google.js`, passo a passo em
+> [`google-agenda.md`](google-agenda.md)): consulta marcada aqui vira evento lá, e o compromisso
+> do médico no Google deixa de ser oferecido ao paciente. Falta o mesmo para os sistemas de
+> prontuário.
+
 Google Calendar ou o sistema de prontuário (iClinic, Feegow, Doctoralia e afins). Sem isso a
 secretária digita tudo duas vezes e as duas agendas divergem — que é o jeito mais rápido de o
 consultório abandonar a ferramenta.

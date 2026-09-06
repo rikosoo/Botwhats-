@@ -27,6 +27,8 @@ const config = {
   host: process.env.HOST || '0.0.0.0',
   timezone: process.env.TZ || 'America/Sao_Paulo',
   schedulerIntervalMs: Number(process.env.SCHEDULER_INTERVAL_MS || 30000),
+  // De quanto em quanto tempo reler os compromissos do Google Agenda.
+  googleSyncMs: Number(process.env.GOOGLE_SYNC_MS || 300000),
   chromiumPath: process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,
   dataFile: process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json'),
 

@@ -148,9 +148,15 @@ class Agenda {
 
   /** Intervalos ja ocupados (em minutos) do profissional na data. */
   busyIntervals(dateStr, professionalId) {
-    return this.store.state.bookings
+    const consultas = this.store.state.bookings
       .filter((b) => b.date === dateStr && b.professionalId === professionalId && b.status === 'confirmado')
       .map((b) => [toMinutes(b.start), toMinutes(b.end)]);
+    // Compromissos vindos de fora (hoje, o Google Agenda do médico). Sem eles
+    // o bot ofereceria ao paciente o horário do congresso que o médico marcou
+    // no celular.
+    const externos = this.ocupadosExternos
+      ? this.ocupadosExternos(dateStr, professionalId) : [];
+    return consultas.concat(externos.map((f) => [toMinutes(f.start), toMinutes(f.end)]));
   }
 
   /**
