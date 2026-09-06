@@ -8,6 +8,9 @@ const {
 } = require('../clinic');
 const { timeKey, formatDateBr } = require('./agenda');
 
+/** "Tanto faz", em suas várias formas: sempre significa "pegue o primeiro". */
+const SEM_PREFERENCIA = /tanto faz|qualquer (um|dia|hora|horario)|indiferente|voce escolhe|o mais (proximo|cedo|rapido)|o quanto antes|o primeiro que tiver|pode ser qualquer/;
+
 /**
  * Autoatendimento do consultório.
  *
@@ -610,7 +613,7 @@ class Bot {
   tratarProfissional(contato, body) {
     const ids = contato.state.data.opcoesProfissionais || [];
     const texto = nlu.normalizar(body);
-    if (/tanto faz|qualquer um|o mais proximo|indiferente|voce escolhe/.test(texto)) {
+    if (SEM_PREFERENCIA.test(texto)) {
       contato.state.data.professionalId = null; // usa o primeiro com vaga
       return this.perguntarDia(contato);
     }
@@ -667,6 +670,9 @@ class Bot {
     const numero = nlu.lerNumero(body, dias.length);
     let escolhido = numero ? dias[numero - 1] : null;
 
+    // "Tanto faz" aqui quer dizer "o mais cedo possível", não confusão.
+    if (!escolhido && SEM_PREFERENCIA.test(texto)) [escolhido] = dias;
+
     if (!escolhido && /amanha/.test(texto)) {
       const { addDaysToKey } = require('./agenda');
       const amanha = addDaysToKey(this.agenda.today(), 1);
@@ -707,6 +713,7 @@ class Bot {
     const horarios = contato.state.data.opcoesHorarios || [];
     const numero = nlu.lerNumero(body, horarios.length);
     let escolhido = numero ? horarios[numero - 1] : null;
+    if (!escolhido && SEM_PREFERENCIA.test(nlu.normalizar(body))) [escolhido] = horarios;
     if (!escolhido) {
       const candidatos = nlu.lerHorarioCandidatos(body, horarios);
       if (candidatos.length === 1) [escolhido] = candidatos;
