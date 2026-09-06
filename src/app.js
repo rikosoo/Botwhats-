@@ -31,10 +31,21 @@ function createApp(config, { channel } = {}) {
     await new Promise((resolve) => setTimeout(resolve, espera));
   };
 
+  /**
+   * Envia e registra. Se o envio falhar, a mensagem entra no histórico marcada
+   * como não entregue: some do WhatsApp, mas não some do painel — a recepção
+   * precisa ver o que o paciente deixou de receber.
+   */
   const sendText = async (phone, text) => {
     const contact = store.upsertContact(phone);
     await pausar(text);
-    await chan.sendText(phone, text);
+    try {
+      await chan.sendText(phone, text);
+    } catch (err) {
+      store.addMessage(contact.id, 'out', text, { channel: chan.name, erro: err.message });
+      store.logEvent('erro', `Não entregue para ${contact.name || contact.phone}: ${err.message}`);
+      throw err;
+    }
     return store.addMessage(contact.id, 'out', text, { channel: chan.name });
   };
 
@@ -55,7 +66,17 @@ function createApp(config, { channel } = {}) {
 
   const handleIncoming = async ({ phone, name, body, mediaType = null }) => {
     const replies = await bot.handleIncoming({ phone, name, body, mediaType });
-    for (const reply of replies) await sendText(phone, reply);
+    let falha = null;
+    for (const reply of replies) {
+      try {
+        await sendText(phone, reply);
+      } catch (err) {
+        // A conversa não pode ser perdida por causa do canal: as respostas
+        // ficam registradas e o erro sobe uma vez só, já em português.
+        falha = falha || err;
+      }
+    }
+    if (falha) throw falha;
     return replies;
   };
 

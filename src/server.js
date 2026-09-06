@@ -175,7 +175,8 @@ function createServer(app) {
       });
       return res.json({ replies });
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      // A mensagem foi processada; o que falhou foi a entrega.
+      return res.status(409).json({ error: err.message, entregue: false });
     }
   });
 
@@ -189,7 +190,7 @@ function createServer(app) {
       await app.sendText(contact.phone, String(body));
       return res.json({ ok: true });
     } catch (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(409).json({ error: err.message, entregue: false });
     }
   });
 

@@ -329,6 +329,15 @@ function renderChat() {
     card.append(el('span', null, `📝 ${paciente.notes[paciente.notes.length - 1].text}`));
   }
 
+  const canal = state.data.channel;
+  const aviso = $('#avisoCanal');
+  const desconectado = canal.name === 'whatsapp' && canal.status !== 'conectado';
+  aviso.hidden = !desconectado;
+  if (desconectado) {
+    aviso.textContent = `⚠️ WhatsApp ${canal.status}. As mensagens não serão entregues até conectar `
+      + '— veja Ajustes → Conexão do WhatsApp.';
+  }
+
   const msgs = state.data.messages.filter((m) => m.contactId === paciente.id);
   if (!msgs.length) box.append(el('div', 'empty', 'Sem mensagens. Envie "oi" pelo simulador.'));
 
@@ -340,6 +349,7 @@ function renderChat() {
       ultimoDia = dia;
     }
     const bubble = el('div', `bubble ${m.direction}`);
+    const erro = m.meta && m.meta.erro;
     const midia = m.meta && m.meta.mediaType;
     if (midia) {
       bubble.classList.add('media');
@@ -347,6 +357,10 @@ function renderChat() {
       if (m.body && !m.body.startsWith('[')) bubble.append(el('div', null, m.body));
     } else {
       bubble.innerHTML = formatBody(m.body);
+    }
+    if (erro) {
+      bubble.classList.add('nao-entregue');
+      bubble.append(el('div', 'entrega', `⚠️ não entregue — ${erro}`));
     }
     bubble.append(el('span', 'meta', fmtHora(m.at)));
     box.append(bubble);

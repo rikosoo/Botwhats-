@@ -88,6 +88,15 @@ data, profissional, duração e se compareceu — nada que identifique alguém.
 Além disso, conversas com mais de `MESSAGE_RETENTION_DAYS` (padrão: 365) são apagadas
 automaticamente. Cadastro e histórico de consultas continuam.
 
+## Quando o WhatsApp não está conectado
+
+O painel continua funcionando: as mensagens são processadas e ficam no histórico, marcadas como
+**não entregues**, com o motivo. Uma faixa acima do campo de digitação avisa que nada será entregue
+até conectar. Assim a recepção vê exatamente o que o paciente deixou de receber, em vez de um erro
+técnico sem contexto.
+
+![mensagem não entregue](docs/nao-entregue.png)
+
 ## Ligar e desligar o bot
 
 Em **Ajustes → Conexão do WhatsApp**, o interruptor **Atendimento automático**. Desligado, o bot
@@ -459,7 +468,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 123 testes com node:test
+test/                 126 testes com node:test
 ```
 
 ## Testes

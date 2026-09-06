@@ -466,3 +466,14 @@ button.ghost.danger:hover { background: rgba(211, 47, 47, .1); color: var(--dang
 @media (prefers-color-scheme: dark) {
   .banner-off { background: #1b2a38; color: #b7d2e8; border-color: #2f4a63; }
 }
+
+.bubble.nao-entregue { border: 1px solid var(--danger); }
+.bubble .entrega { margin-top: 6px; font-size: 11.5px; opacity: .9; font-weight: 600; }
+
+.aviso-canal {
+  padding: 8px 12px; font-size: 12.5px; background: #fff4d6; color: #7a4a00;
+  border-top: 1px solid #f0c069;
+}
+@media (prefers-color-scheme: dark) {
+  .aviso-canal { background: #3a2f12; color: #ffd98a; border-color: #6b5410; }
+}

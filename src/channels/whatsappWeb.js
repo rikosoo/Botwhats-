@@ -56,6 +56,7 @@ class WhatsAppWebChannel {
     this.qr = null;
     this.onMessage = null;
     this.client = null;
+    this.pronto = false;
   }
 
   async start() {
@@ -110,12 +111,19 @@ class WhatsAppWebChannel {
 
     this.client.on('ready', () => {
       this.qr = null;
+      this.pronto = true;
       this.status = 'conectado';
       console.log('[whatsapp] conectado');
     });
 
     this.client.on('disconnected', (reason) => {
+      this.pronto = false;
       this.status = `desconectado (${reason})`;
+    });
+
+    this.client.on('auth_failure', (msg) => {
+      this.pronto = false;
+      this.status = `falha na autenticacao (${msg})`;
     });
 
     this.client.on('message', async (msg) => {
@@ -151,6 +159,11 @@ class WhatsAppWebChannel {
 
   async sendText(phone, text) {
     if (!this.client) throw new Error('Canal do WhatsApp nao iniciado');
+    // Sem esta checagem, a biblioteca estoura com "Cannot read properties of
+    // undefined (reading 'getChat')" — mensagem que nao ajuda ninguem.
+    if (!this.pronto) {
+      throw new Error('WhatsApp ainda nao conectado — leia o QR Code em Ajustes > Conexao do WhatsApp');
+    }
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
     return this.client.sendMessage(chatId, text);
   }
@@ -168,6 +181,7 @@ class WhatsAppWebChannel {
     } catch {
       await this.client.destroy();
     }
+    this.pronto = false;
     this.status = 'aguardando leitura do QR Code';
     await this.client.initialize();
   }

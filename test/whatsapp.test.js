@@ -118,3 +118,40 @@ test('falha ao iniciar o canal aparece no painel, não só no log', async () => 
     await p.fechar();
   }
 });
+
+test('mensagem não entregue fica no histórico com o motivo', async () => {
+  const { makeApp: criar } = require('./helpers');
+  const app = criar();
+  // Canal que recusa o envio, como o WhatsApp antes de conectar.
+  app.channel.sendText = async () => {
+    throw new Error('WhatsApp ainda nao conectado — leia o QR Code em Ajustes > Conexao do WhatsApp');
+  };
+
+  const phone = '5511900090001';
+  await assert.rejects(
+    () => app.handleIncoming({ phone, body: 'oi' }),
+    /ainda nao conectado/,
+    'o erro chega a quem chamou, em português',
+  );
+
+  const paciente = app.store.findContactByPhone(phone);
+  const saidas = app.store.messagesOf(paciente.id).filter((m) => m.direction === 'out');
+  assert.ok(saidas.length > 0, 'a resposta foi registrada mesmo sem entregar');
+  assert.match(saidas[0].meta.erro, /ainda nao conectado/);
+  assert.ok(app.store.state.events.some((e) => e.type === 'erro' && /Não entregue/.test(e.text)));
+});
+
+test('o simulador responde 409 com texto útil quando a entrega falha', async () => {
+  const p = await painel();
+  try {
+    p.app.channel.sendText = async () => { throw new Error('WhatsApp ainda nao conectado'); };
+    const { status, corpo } = await p.chamar('/api/simulate', {
+      method: 'POST', body: { phone: '5511900090002', body: 'oi' },
+    });
+    assert.strictEqual(status, 409);
+    assert.match(corpo.error, /ainda nao conectado/);
+    assert.strictEqual(corpo.entregue, false);
+  } finally {
+    await p.fechar();
+  }
+});
