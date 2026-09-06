@@ -239,6 +239,57 @@ class Agenda {
     };
   }
 
+  /**
+   * Sete dias lado a lado, por profissional.
+   *
+   * "Hoje" resolve o dia; a lista de próximas consultas resolve o paciente.
+   * Nenhuma das duas responde a pergunta que a recepção faz o tempo todo ao
+   * telefone: onde é que tem buraco nesta semana. Aqui cada dia traz o que
+   * está marcado, quantos horários sobraram e se o dia foi bloqueado — dá
+   * para bater o olho e responder.
+   */
+  semana(inicio = this.today(), dias = 7) {
+    const out = [];
+    let cursor = inicio;
+    for (let i = 0; i < dias; i += 1) {
+      const profissionais = this.clinic.professionals.map((p) => {
+        const marcadas = this.store.state.bookings
+          .filter((b) => b.date === cursor && b.professionalId === p.id && b.status === 'confirmado')
+          .sort((a, b) => a.start.localeCompare(b.start));
+        const livres = this.slotsFor(cursor, {
+          professionalId: p.id, includePast: true,
+        }).length;
+        const faixas = rangesFor(p, cursor);
+        return {
+          id: p.id,
+          name: p.name,
+          marcadas,
+          livres,
+          // Sem faixa nenhuma o dia não é "cheio", é fechado: férias, folga da
+          // semana ou bloqueio. A tela precisa distinguir para não parecer que
+          // a agenda lotou.
+          atende: faixas.length > 0,
+        };
+      });
+      out.push({
+        date: cursor,
+        weekday: weekdayOf(cursor),
+        marcadas: profissionais.reduce((t, p) => t + p.marcadas.length, 0),
+        livres: profissionais.reduce((t, p) => t + p.livres, 0),
+        atende: profissionais.some((p) => p.atende),
+        profissionais,
+      });
+      cursor = addDaysToKey(cursor, 1);
+    }
+    return out;
+  }
+
+  /** Segunda-feira da semana que contém a data (a semana da recepção começa aí). */
+  segundaDe(dateStr = this.today()) {
+    const dia = weekdayOf(dateStr);
+    return addDaysToKey(dateStr, dia === 0 ? -6 : 1 - dia);
+  }
+
   /** Agenda do dia por profissional — usado pelo painel da secretaria. */
   dayView(dateStr) {
     return this.clinic.professionals.map((p) => ({

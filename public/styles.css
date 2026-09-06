@@ -168,7 +168,10 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .section-picker {
   padding: 10px; border-bottom: 1px solid var(--line);
   background: var(--card-2); flex: 0 0 auto;
+  display: flex; gap: 8px; align-items: center;
 }
+.section-picker button { padding: 7px 10px; font-size: 13px; flex: 0 0 auto; }
+.section-picker button.ativo { border-color: var(--accent); color: var(--accent); }
 .section-picker select {
   width: 100%; background: var(--bg-soft); border: 1px solid var(--line);
   border-radius: 9px; padding: 9px 10px; color: var(--text);
@@ -178,6 +181,52 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .tab-panel { display: none; padding: 12px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .tab-panel.active { display: block; }
 .card.side { height: calc(100vh - 190px); }
+
+/* Seção em tela cheia: a semana, os números e o cadastro da equipe ficam
+   apertados na coluna estreita — este modo empresta a largura das outras. */
+.grid.foco { grid-template-columns: 1fr; }
+.grid.foco > .card:not(.side) { display: none; }
+.grid.foco > .card.side { height: calc(100vh - 150px); }
+
+/* ---------- visão de semana ---------- */
+
+.semana-nav { display: flex; gap: 4px; }
+.semana-nav button { padding: 2px 9px; font-size: 12px; }
+
+/* Sete colunas estreitas; em tela pequena a semana rola na horizontal em vez
+   de espremer cada dia até o nome do paciente sumir. */
+.semana {
+  display: grid; grid-template-columns: repeat(7, minmax(96px, 1fr));
+  gap: 6px; overflow-x: auto; padding-bottom: 4px;
+}
+.semana-dia {
+  border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft);
+  padding: 6px; min-width: 96px;
+}
+.semana-dia.hoje { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.semana-dia.fechado { opacity: .55; }
+.semana-topo { display: flex; justify-content: space-between; align-items: baseline; gap: 4px; }
+.semana-nome { font-weight: 700; font-size: 12px; text-transform: capitalize; }
+.semana-data { font-size: 11px; color: var(--muted); }
+.semana-barra { height: 4px; border-radius: 3px; background: var(--line); margin: 6px 0 4px; overflow: hidden; }
+.semana-barra-cheia { height: 100%; background: var(--accent); }
+.semana-conta { font-size: 10.5px; color: var(--muted); line-height: 1.3; }
+.semana-vazio { font-size: 11px; color: var(--muted); margin-top: 8px; }
+.semana-prof { font-size: 10.5px; color: var(--muted); margin: 6px 0 2px; font-weight: 600; }
+.semana-consulta {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%;
+  margin-top: 4px; padding: 4px 6px; border: 1px solid var(--line); border-left-width: 3px;
+  border-radius: 7px; background: var(--card); color: var(--text); cursor: pointer; text-align: left;
+}
+.semana-consulta:hover { border-color: var(--accent); }
+.semana-consulta.confirmado { border-left-color: var(--accent); }
+.semana-consulta.aguardando { border-left-color: var(--warn); }
+.semana-consulta.urgente { border-left-color: var(--danger); }
+.semana-hora { font-size: 11px; font-weight: 700; }
+.semana-paciente {
+  font-size: 11px; color: var(--muted); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 
 .day-block { margin-bottom: 14px; }
 .day-title { font-weight: 650; font-size: 13px; margin: 10px 0 7px; }
@@ -254,6 +303,7 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .patient-card b { color: var(--text); font-weight: 600; }
 
 .chat-title { min-width: 0; }
+.so-celular { display: none; }
 .chat-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
 
 .appt {
@@ -493,4 +543,93 @@ button.ghost.danger:hover { background: rgba(211, 47, 47, .1); color: var(--dang
 .nao-lidas-topo {
   background: #fff; color: #0b5d73; font-weight: 700; font-size: 12.5px;
   padding: 5px 11px; border-radius: 999px;
+}
+
+/* ---------- celular ----------
+   Abaixo de 720px as três colunas empilhadas viravam 2,5 mil pixels de
+   rolagem: a recepção passava o dedo procurando a conversa. Aqui o painel
+   mostra uma coluna de cada vez, escolhida na barra de baixo, com o polegar. */
+
+.mobile-nav { display: none; }
+
+@media (max-width: 720px) {
+  .topbar { padding: 10px 12px; gap: 8px; }
+  .topbar .logo { width: 34px; height: 34px; font-size: 18px; }
+  .topbar h1 { font-size: 15px; line-height: 1.2; }
+  .topbar .sub { display: none; }
+  .topbar-right { gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .topbar-right .status { padding: 5px 9px; font-size: 11.5px; }
+
+  /* Nove indicadores empilhados empurravam a conversa para fora da tela;
+     agora eles correm de lado numa faixa só. */
+  .kpis {
+    display: flex; overflow-x: auto; gap: 8px; padding: 10px 12px 2px;
+    scroll-snap-type: x proximity;
+  }
+  .kpi { flex: 0 0 43%; scroll-snap-align: start; padding: 9px 11px; }
+  .kpi .value { font-size: 20px; }
+  .kpi .label { font-size: 10.5px; }
+
+  .grid { padding: 10px 12px 76px; gap: 10px; }
+  .card, .card.side { max-height: none; height: auto; }
+  .card.contacts { max-height: calc(100vh - 210px); }
+  .card.side .tab-panel { max-height: calc(100vh - 250px); }
+
+  /* Na conversa a tela é toda dela: sem indicadores, o histórico rola por
+     dentro do cartão e a caixa de digitar fica logo acima da barra de baixo,
+     como em qualquer aplicativo de mensagem. */
+  body.vista-chat .kpis { display: none; }
+  /* A altura exata vem do JS (ajustarAlturaDaConversa); esta é a de partida. */
+  .grid.vista-chat > .card.chat { height: calc(100vh - 220px); }
+  .card.chat .messages { flex: 1 1 auto; min-height: 120px; }
+
+  /* A ficha do paciente e os quatro botões de ação ocupavam metade do
+     telefone. Ficam guardados atrás do ⓘ, e o histórico fica com a tela. */
+  .so-celular { display: inline-flex; }
+  .card.chat .chat-actions,
+  .card.chat .patient-card.show { display: none; }
+  .card.chat.detalhes .chat-actions { display: flex; }
+  .card.chat.detalhes .patient-card.show { display: flex; }
+  .patient-card { font-size: 12.5px; }
+  /* As respostas rápidas são atalhos do simulador: no telefone elas comiam a
+     tela que a caixa de digitar precisa. */
+  .quick { display: none; }
+
+  /* Uma coluna por vez; a barra de baixo escolhe qual. */
+  .grid > .card { display: none; }
+  .grid.vista-contacts > .card.contacts,
+  .grid.vista-chat > .card.chat,
+  .grid.vista-side > .card.side { display: flex; }
+  .grid.foco > .card.side { display: flex; height: auto; }
+
+  .mobile-nav {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
+    background: var(--card); border-top: 1px solid var(--line);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 20px rgba(0, 0, 0, .18);
+  }
+  .mobile-nav button {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    background: none; border: none; color: var(--muted); font-size: 18px;
+    padding: 6px 0; cursor: pointer; border-radius: 10px;
+  }
+  .mobile-nav button span { font-size: 11px; font-weight: 600; }
+  .mobile-nav button.ativo { color: var(--accent); background: var(--bg-soft); }
+  .mobile-nav button .aviso {
+    position: absolute; transform: translate(16px, -4px);
+    background: var(--accent); color: #04222a; font-size: 10px; font-weight: 800;
+    border-radius: 999px; padding: 0 5px; min-width: 16px; text-align: center;
+  }
+
+  /* Alvos de toque: nada abaixo de ~36px de altura. */
+  button, .slot, .chip { min-height: 36px; }
+  /* O espaço da esquerda é da caixinha de seleção — sem ele o nome fica por
+     cima dela. */
+  .contact-list li { padding: 12px 12px 12px 34px; }
+  .pick { width: 18px; height: 18px; top: 14px; }
+  .composer { flex-wrap: nowrap; gap: 6px; padding: 8px 10px; }
+  .composer select { flex: 0 0 auto; max-width: 104px; font-size: 11.5px; padding: 8px 6px; }
+  .composer input { flex: 1 1 auto; min-width: 0; }
+  .composer button { flex: 0 0 auto; padding: 8px 12px; }
+  .semana { grid-template-columns: repeat(7, minmax(112px, 1fr)); }
 }

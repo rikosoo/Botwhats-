@@ -97,7 +97,7 @@ No alto da coluna da direita há uma **caixa de seleção** com as nove seções
 | Seção | O que tem lá |
 | --- | --- |
 | 📅 Hoje | Agenda do dia; marcar *compareceu* / *faltou* / *confirmar* |
-| 🗓️ Agenda | Próximas consultas, lista de espera e horários livres para encaixe |
+| 🗓️ Agenda | **Semana inteira**, próximas consultas, lista de espera e horários livres para encaixe |
 | 🔔 Lembretes | Fila do que vai sair, com *enviar agora* e *cancelar* |
 | 📣 Disparo | Mensagem para um grupo de pacientes |
 | 📊 Números | Taxa de falta, confirmou × não confirmou, ocupação |
@@ -108,6 +108,10 @@ No alto da coluna da direita há uma **caixa de seleção** com as nove seções
 
 Para ver a lista de espera funcionando: cancele uma consulta futura na aba Agenda e veja a vaga
 sendo oferecida a quem está na fila.
+
+No celular o painel mostra uma coluna de cada vez, escolhida na barra de baixo (👥 Pacientes, 💬
+Conversa, 📋 Painel). No computador, o **⛶** ao lado do seletor faz a seção ocupar a tela toda —
+útil para a visão de semana.
 
 Mensagem que chega e ninguém abriu aparece com **contador verde** na lista de pacientes, no alto do
 painel e no título da aba do navegador. O 🔔 ao lado liga o aviso sonoro.

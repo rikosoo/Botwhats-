@@ -264,6 +264,10 @@ onde ficam convênios, horários e senha.
 ![seletor de seção](docs/secoes.png)
 
 - **Hoje**: agenda do dia por profissional, com botões *Confirmar*, *Compareceu*, *Faltou* e *Cancelar*.
+- **Semana**: os sete dias lado a lado no alto da aba Agenda, com o que está marcado, quanto sobrou
+  em cada dia e os dias fechados (férias, bloqueio, folga da semana). É a resposta para a pergunta
+  que a recepção faz no telefone — *onde tem buraco esta semana?* — sem abrir dia por dia. As setas
+  andam de semana em semana e clicar numa consulta abre a conversa do paciente.
 - **Fila e urgências**: pacientes que pediram atendente ou dispararam a triagem sobem para o topo, com selo vermelho.
 - **Conversas**: histórico em bolhas, ficha do paciente (nascimento, convênio, próxima consulta, status da confirmação), envio manual pela recepção e botão para devolver a conversa ao bot.
 - **Não lidas**: cada conversa com mensagem nova ganha um contador verde e sobe para o topo da
@@ -278,6 +282,16 @@ onde ficam convênios, horários e senha.
   está segurando de falta. Consultas que passaram sem ninguém marcar presença aparecem à parte e
   ficam fora da conta, em vez de virar "compareceu" por omissão.
 - **Ajustes**: dados do consultório, convênios, valores, o que levar e a agenda de cada profissional — tudo editável sem mexer no código.
+
+O botão **⛶** ao lado do seletor de seção faz a seção ocupar a tela inteira — a semana, os números e
+o cadastro da equipe ficam apertados na coluna estreita.
+
+### No celular
+
+Abaixo de 720px o painel mostra **uma coluna de cada vez**, escolhida na barra de baixo — 👥 Pacientes,
+💬 Conversa, 📋 Painel — em vez de empilhar as três em dois mil pixels de rolagem. O número de não
+lidas aparece na aba Pacientes; tocar num paciente já abre a conversa; e na conversa a caixa de
+digitar fica logo acima da barra, com a ficha do paciente e as ações guardadas atrás do **ⓘ**.
 
 ![aba de números](docs/numeros.png)
 
@@ -467,6 +481,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `POST` | `/api/contacts/:id/read` | Marca a conversa como lida |
 | `POST`/`PUT`/`DELETE` | `/api/services[/:id]` | Tipos de atendimento |
 | `GET` | `/api/slots-dias?professionalId=&serviceId=` | Dias com horário livre para a combinação |
+| `GET` | `/api/semana?inicio=AAAA-MM-DD` | Sete dias com consultas, livres e dias fechados |
 | `GET` | `/api/health` | Status do canal e contadores |
 
 ## Estrutura

@@ -12,7 +12,12 @@ const state = {
   encaixe: {},              // profissional/atendimento escolhidos para encaixe manual
   som: localStorage.getItem('somNotificacao') !== 'off',
   naoLidasAnterior: null,   // para avisar só quando chega mensagem nova
+  semana: { inicio: null, dias: null, hoje: null, chave: null, buscando: false },
+  vista: localStorage.getItem('vistaCelular') || 'contacts',
 };
+
+/** No celular o painel mostra uma coluna de cada vez. */
+const noCelular = () => window.matchMedia('(max-width: 720px)').matches;
 
 const $ = (sel) => document.querySelector(sel);
 const el = (tag, className, text) => {
@@ -166,12 +171,24 @@ function atualizarAvisos(total) {
   const marca = $('#naoLidasTopo');
   marca.hidden = !total;
   marca.textContent = total ? `${total} sem ler` : '';
+
+  // No celular a lista de pacientes costuma estar escondida atrás da barra de
+  // baixo; o número precisa aparecer lá também.
+  const aba = document.querySelector('.mobile-nav button[data-vista="contacts"]');
+  if (aba) {
+    let aviso = aba.querySelector('.aviso');
+    if (!total) { if (aviso) aviso.remove(); } else {
+      if (!aviso) { aviso = el('span', 'aviso'); aba.append(aviso); }
+      aviso.textContent = String(total);
+    }
+  }
 }
 
 function render() {
   const d = state.data;
   if (!d) return;
   atualizarAvisos(d.naoLidasTotal || 0);
+  ajustarAlturaDaConversa();
 
   $('#clinicName').textContent = d.clinic.name;
   $('#clinicSub').textContent = `${d.clinic.specialty} · assistente ${d.clinic.assistantName} · ${d.clinic.hoursText}`;
@@ -336,6 +353,8 @@ function renderContacts() {
       state.selected = c.id;
       localStorage.setItem('pacienteSelecionado', c.id);
       render();
+      // No celular, escolher o paciente é o gesto de "abrir a conversa".
+      if (noCelular()) mostrarVista('chat');
       // Abrir a conversa é o que marca como lida.
       await marcarLida(c.id, c.naoLidas);
     });
@@ -585,11 +604,189 @@ async function statusConsulta(id, body) {
 }
 
 /** Aba Agenda: lista de espera, próximas consultas e horários livres. */
+/**
+ * Assinatura das consultas: muda quando alguém marca, cancela ou confirma.
+ * É o que diz se a semana já buscada continua valendo.
+ */
+/** Soma dias a uma data AAAA-MM-DD sem esbarrar em fuso. */
+function somarDias(data, dias) {
+  const [y, m, d] = data.split('-').map(Number);
+  const base = new Date(Date.UTC(y, m - 1, d));
+  base.setUTCDate(base.getUTCDate() + dias);
+  return base.toISOString().slice(0, 10);
+}
+
+/**
+ * Coluna visível no celular.
+ *
+ * Em tela grande as três aparecem juntas e a classe não faz diferença: o CSS
+ * só usa isso abaixo de 720px.
+ */
+function mostrarVista(vista) {
+  state.vista = vista;
+  localStorage.setItem('vistaCelular', vista);
+  aplicarVista();
+}
+
+function aplicarVista() {
+  const grade = document.querySelector('.grid');
+  if (!grade) return;
+  for (const nome of ['contacts', 'chat', 'side']) {
+    grade.classList.toggle(`vista-${nome}`, state.vista === nome);
+    // No <body> também: na conversa o celular esconde a faixa de indicadores
+    // para a caixa de digitar caber na tela.
+    document.body.classList.toggle(`vista-${nome}`, state.vista === nome);
+  }
+  const detalhes = $('#btnDetalhes');
+  detalhes.addEventListener('click', () => {
+    const cartao = document.querySelector('.card.chat');
+    const aberto = cartao.classList.toggle('detalhes');
+    detalhes.classList.toggle('ativo', aberto);
+  });
+
+  for (const botao of document.querySelectorAll('.mobile-nav button')) {
+    botao.classList.toggle('ativo', botao.dataset.vista === state.vista);
+  }
+  ajustarAlturaDaConversa();
+}
+
+/**
+ * Altura do cartão da conversa no celular.
+ *
+ * Um `calc()` fixo erra sempre que um aviso aparece ou some no topo — e o
+ * erro empurra a caixa de digitar para trás da barra de baixo. Aqui a conta é
+ * feita com a posição real do cartão na tela.
+ */
+function ajustarAlturaDaConversa() {
+  const cartao = document.querySelector('.card.chat');
+  if (!cartao) return;
+  if (!noCelular() || state.vista !== 'chat') { cartao.style.height = ''; return; }
+  const barra = document.querySelector('.mobile-nav');
+  const alturaBarra = barra ? barra.getBoundingClientRect().height : 0;
+  const topo = cartao.getBoundingClientRect().top;
+  const altura = window.innerHeight - topo - alturaBarra - 12;
+  cartao.style.height = `${Math.max(280, Math.round(altura))}px`;
+}
+
+function chaveDasConsultas() {
+  return (state.data.bookings || [])
+    .map((b) => `${b.id}${b.status}${b.date}${b.start}${b.confirmation}`).join('|');
+}
+
+async function buscarSemana(inicio = null) {
+  if (state.semana.buscando) return;
+  state.semana.buscando = true;
+  try {
+    // 'atual' deixa o servidor escolher a semana de hoje; nulo mantém a que
+    // já está na tela (é o caso do redesenho depois de marcar uma consulta).
+    const alvo = inicio === 'atual' ? null : (inicio || state.semana.inicio);
+    const dados = await api(`/api/semana${alvo ? `?inicio=${alvo}` : ''}`);
+    state.semana = {
+      inicio: dados.inicio,
+      hoje: dados.hoje,
+      dias: dados.dias,
+      chave: chaveDasConsultas(),
+      buscando: false,
+    };
+    renderAgenda();
+  } catch {
+    state.semana.buscando = false;
+  }
+}
+
+const DIA_CURTO = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+/**
+ * Semana inteira em sete colunas.
+ *
+ * A pergunta que a recepção faz no telefone é "onde tem buraco esta semana?".
+ * Antes ela precisava abrir dia por dia; aqui a semana cabe numa olhada, com
+ * o que está marcado e quanto sobrou em cada dia.
+ */
+function renderSemana(panel) {
+  const cabecalho = el('div', 'row');
+  cabecalho.append(el('span', 'day-title', 'Semana'));
+  const navegacao = el('div', 'semana-nav');
+  const anterior = el('button', 'ghost', '‹');
+  anterior.title = 'Semana anterior';
+  const atual = el('button', 'ghost', 'Hoje');
+  const proxima = el('button', 'ghost', '›');
+  proxima.title = 'Próxima semana';
+  anterior.addEventListener('click', () => buscarSemana(somarDias(state.semana.inicio, -7)));
+  proxima.addEventListener('click', () => buscarSemana(somarDias(state.semana.inicio, 7)));
+  atual.addEventListener('click', () => buscarSemana('atual'));
+  navegacao.append(anterior, atual, proxima);
+  cabecalho.append(navegacao);
+  panel.append(cabecalho);
+
+  if (!state.semana.dias) {
+    panel.append(el('div', 'desc', 'Carregando a semana…'));
+    return;
+  }
+
+  // Com um médico só, repetir o nome em cada coluna é ruído.
+  const varios = state.data.clinic.professionals.length > 1;
+  const grade = el('div', 'semana');
+  for (const dia of state.semana.dias) {
+    const coluna = el('div', 'semana-dia');
+    if (dia.date === state.semana.hoje) coluna.classList.add('hoje');
+    if (!dia.atende) coluna.classList.add('fechado');
+
+    const topo = el('div', 'semana-topo');
+    topo.append(el('span', 'semana-nome', DIA_CURTO[dia.weekday]));
+    topo.append(el('span', 'semana-data', dia.date.slice(8) + '/' + dia.date.slice(5, 7)));
+    coluna.append(topo);
+
+    if (!dia.atende) {
+      coluna.append(el('div', 'semana-vazio', 'fechado'));
+    } else {
+      const total = dia.marcadas + dia.livres;
+      const barra = el('div', 'semana-barra');
+      const cheio = el('div', 'semana-barra-cheia');
+      cheio.style.width = `${total ? Math.round((dia.marcadas / total) * 100) : 0}%`;
+      barra.append(cheio);
+      coluna.append(barra);
+      coluna.append(el('div', 'semana-conta',
+        dia.livres ? `${dia.marcadas} marcada(s) · ${dia.livres} livre(s)` : `${dia.marcadas} marcada(s) · lotado`));
+    }
+
+    for (const prof of dia.profissionais) {
+      if (!prof.atende && !prof.marcadas.length) continue;
+      if (varios) {
+        coluna.append(el('div', 'semana-prof',
+          prof.atende ? `${prof.name} · ${prof.livres} livre(s)` : `${prof.name} · fechado`));
+      }
+      for (const b of prof.marcadas) {
+        const item = el('button', 'semana-consulta');
+        const marca = selo(b);
+        item.classList.add(marca.classe || 'aguardando');
+        item.append(el('span', 'semana-hora', b.start));
+        item.append(el('span', 'semana-paciente', nomePaciente(pacientePorId(b.contactId))));
+        item.title = `${b.serviceName} · ${prof.name} · ${marca.texto}`;
+        item.addEventListener('click', () => {
+          state.selected = b.contactId;
+          localStorage.setItem('pacienteSelecionado', b.contactId);
+          render();
+        });
+        coluna.append(item);
+      }
+    }
+    grade.append(coluna);
+  }
+  panel.append(grade);
+  panel.append(el('hr'));
+}
+
 function renderAgenda() {
   const panel = $('#tab-agenda');
   panel.innerHTML = '';
   const d = state.data;
   const paciente = pacientePorId(state.selected);
+
+  // A semana vem por fora do snapshot (são sete dias de grade); só é buscada
+  // de novo quando alguma consulta muda.
+  if (!state.semana.dias || state.semana.chave !== chaveDasConsultas()) buscarSemana();
+  renderSemana(panel);
 
   renderEspera(panel, d, paciente);
 
@@ -1805,6 +2002,29 @@ function ligarEventos() {
     });
   };
   seletor.addEventListener('change', trocarSecao);
+
+  // Tela cheia para a seção: a semana e os cadastros não cabem bem na coluna
+  // estreita, e no celular as três colunas empilhadas cansam.
+  const grade = document.querySelector('.grid');
+  const botaoLargura = $('#btnLargura');
+  const aplicarLargura = () => {
+    const ligado = localStorage.getItem('secaoLarga') === 'on';
+    grade.classList.toggle('foco', ligado);
+    botaoLargura.classList.toggle('ativo', ligado);
+    botaoLargura.title = ligado ? 'Voltar ao painel inteiro' : 'Ocupar a tela inteira';
+    botaoLargura.textContent = ligado ? '⤡' : '⛶';
+  };
+  botaoLargura.addEventListener('click', () => {
+    localStorage.setItem('secaoLarga', localStorage.getItem('secaoLarga') === 'on' ? 'off' : 'on');
+    aplicarLargura();
+  });
+  aplicarLargura();
+
+  for (const botao of document.querySelectorAll('.mobile-nav button')) {
+    botao.addEventListener('click', () => mostrarVista(botao.dataset.vista));
+  }
+  aplicarVista();
+  window.addEventListener('resize', aplicarVista);
 
   const guardada = localStorage.getItem('secaoPainel');
   if (guardada && seletor.querySelector(`option[value="${guardada}"]`)) seletor.value = guardada;

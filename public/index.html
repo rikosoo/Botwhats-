@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Recepção · Autoatendimento</title>
-  <link rel="stylesheet" href="styles.css?v=11" />
+  <link rel="stylesheet" href="styles.css?v=12" />
 </head>
 <body>
   <div id="loginScreen" class="login-screen" hidden>
@@ -69,6 +69,7 @@
           <h2 id="chatName">Selecione um paciente</h2>
           <p class="sub" id="chatMeta">O simulador permite testar o atendimento sem conectar o WhatsApp</p>
         </div>
+        <button id="btnDetalhes" class="ghost so-celular" type="button" title="Ficha e ações do paciente">ⓘ</button>
         <div class="chat-actions">
           <button id="btnRelease" class="ghost" title="Devolver a conversa para o atendimento automático">↩ Devolver ao bot</button>
           <button id="btnFollowups" class="ghost" title="Reagendar lembretes de 1/7/15 dias">↻ Lembretes</button>
@@ -92,6 +93,7 @@
 
     <section class="card side">
       <div class="section-picker">
+        <button id="btnLargura" class="ghost" type="button" title="Ocupar a tela inteira">⛶</button>
         <select id="tabSelect" aria-label="Seção do painel">
           <option value="hoje">📅 Hoje — agenda do dia, presença e faltas</option>
           <option value="agenda">🗓️ Agenda — próximas consultas e lista de espera</option>
@@ -116,7 +118,13 @@
     </section>
   </main>
 
+  <nav class="mobile-nav" id="mobileNav" aria-label="Seções do painel no celular">
+    <button type="button" data-vista="contacts">👥<span>Pacientes</span></button>
+    <button type="button" data-vista="chat">💬<span>Conversa</span></button>
+    <button type="button" data-vista="side">📋<span>Painel</span></button>
+  </nav>
+
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=11"></script>
+  <script src="app.js?v=12"></script>
 </body>
 </html>

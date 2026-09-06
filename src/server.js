@@ -275,6 +275,13 @@ function createServer(app) {
     res.json({ date, agenda: agenda.dayView(date) });
   });
 
+  // Visão de semana: sete dias a partir da segunda-feira pedida.
+  server.get('/api/semana', (req, res) => {
+    const pedida = String(req.query.inicio || '');
+    const inicio = /^\d{4}-\d{2}-\d{2}$/.test(pedida) ? pedida : agenda.segundaDe();
+    return res.json({ inicio, hoje: agenda.today(), dias: agenda.semana(inicio, 7) });
+  });
+
   server.post('/api/bookings', (req, res) => {
     const { contactId, professionalId, serviceId, date, start, insurance, note } = req.body || {};
     const contact = store.getContact(contactId);
