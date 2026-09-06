@@ -107,8 +107,8 @@ de sessão passa a exigir conexão segura. Para gerar um certificado próprio:
 npm run certificado 203.0.113.10   # o IP ou domínio pelo qual você acessa
 ```
 
-A mesma porta passa a atender os dois protocolos: quem digita `http://` é redirecionado para
-`https://`, em vez de receber uma tela de erro seca. O navegador avisa que o certificado é do
+A mesma porta atende os dois protocolos: quem digita `http://` recebe uma página com o link para o
+endereço seguro, em vez de uma tela de erro seca. O navegador avisa que o certificado é do
 próprio servidor (Avançado → Prosseguir) — o tráfego fica criptografado do mesmo jeito. Para um certificado sem aviso, veja as opções em
 [`docs/deploy-aws.md`](docs/deploy-aws.md).
 
