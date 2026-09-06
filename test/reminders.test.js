@@ -211,3 +211,41 @@ test('véspera pede um sim ou não simples', async () => {
   assert.match(app.ultima(), /Responda \*sim\* ou \*não\*/);
   assert.match(app.ultima(), /reservou 40 minutos só para você/);
 });
+
+test('o bot só fala em agenda enchendo quando ela está mesmo cheia', async () => {
+  const app = makeApp();
+  const paciente = app.store.upsertContact('5511933333350', 'Vera Nunes');
+  app.reminders.scheduleFollowUps(paciente, new Date(Date.now() - 8 * DAY_MS));
+
+  // Agenda vazia: nada de escassez.
+  await app.reminders.tick();
+  assert.doesNotMatch(app.textoEnviado(), /quase fechando/i);
+  assert.match(app.textoEnviado(), /ainda quer marcar|uma semana/i);
+});
+
+test('agenda cheia de verdade muda o texto do follow-up', async () => {
+  const app = makeApp();
+  // Fecha a agenda de todo mundo menos um punhado de horários, e ocupa-os.
+  for (const p of app.store.clinic.professionals) {
+    p.weekly = { 0: [], 1: [{ start: '09:00', end: '10:00' }], 2: [], 3: [], 4: [], 5: [], 6: [] };
+  }
+  const ocupante = app.store.upsertContact('5511933333351', 'Ocupante');
+  for (const profissional of app.store.clinic.professionals) {
+    const dias = app.agenda.nextAvailableDays(7, { professionalId: profissional.id, serviceId: 'retorno' });
+    for (const dia of dias) {
+      for (const slot of dia.slots) {
+        app.agenda.book(ocupante.id, {
+          professionalId: profissional.id, serviceId: 'retorno', date: dia.date, start: slot.start,
+        });
+      }
+    }
+  }
+  assert.ok(app.agenda.ocupacao(7).percentual >= 80, 'a agenda está realmente cheia');
+
+  const paciente = app.store.upsertContact('5511933333352', 'Wanda Lopes');
+  app.reminders.scheduleFollowUps(paciente, new Date(Date.now() - 8 * DAY_MS));
+  app.sent.length = 0;
+  await app.reminders.tick();
+
+  assert.match(app.ultima(), /quase fechando/i);
+});

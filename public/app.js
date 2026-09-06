@@ -984,6 +984,18 @@ function renderNumeros() {
     panel.append(box);
   }
 
+  const oc = state.data.ocupacao;
+  if (oc && oc.total) {
+    panel.append(el('div', 'day-title', 'Ocupação dos próximos 7 dias'));
+    panel.append(blocoMetrica(
+      'Agenda ocupada',
+      `${oc.percentual}%`,
+      oc.percentual >= 80 ? 'atencao' : 'bom',
+      `${oc.ocupados} consulta(s) marcada(s) · ${oc.livres} horário(s) livre(s)`
+      + (oc.percentual >= 80 ? ' — o bot já pode dizer que as datas estão fechando' : ''),
+    ));
+  }
+
   panel.append(el('div', 'day-title', 'Movimento'));
   const mov = el('div', 'item');
   for (const [rotulo, valor] of [
@@ -1287,6 +1299,41 @@ function ligarEventos() {
     await api(`/api/contacts/${state.selected}/followups`, { method: 'POST' });
     toast('Lembretes de 1/7/15 dias reagendados');
     await carregar();
+  });
+
+  $('#btnExport').addEventListener('click', async () => {
+    if (!state.selected) return toast('Selecione um paciente');
+    const paciente = pacientePorId(state.selected);
+    const dados = await api(`/api/contacts/${state.selected}/export`);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' }));
+    const a = el('a');
+    a.href = url;
+    a.download = `dados-${(paciente.name || paciente.phone).replace(/\s+/g, '-').toLowerCase()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Arquivo gerado');
+    return undefined;
+  });
+
+  $('#btnErase').addEventListener('click', async () => {
+    if (!state.selected) return toast('Selecione um paciente');
+    const paciente = pacientePorId(state.selected);
+    const nome = nomePaciente(paciente);
+    // Exclusão é irreversível: pedir o nome evita o clique errado na correria.
+    const confirmacao = prompt(
+      `Isto apaga em definitivo o cadastro, as conversas e os lembretes de ${nome}.\n`
+      + 'As consultas continuam na estatística, sem nome.\n\n'
+      + `Para confirmar, escreva o nome do paciente:`,
+    );
+    if (confirmacao === null) return undefined;
+    if (confirmacao.trim().toLowerCase() !== nome.toLowerCase()) return toast('Nome não confere — nada foi apagado');
+
+    const resumo = await api(`/api/contacts/${state.selected}`, { method: 'DELETE' });
+    state.selected = null;
+    localStorage.removeItem('pacienteSelecionado');
+    toast(`Dados apagados (${resumo.mensagens} mensagens, ${resumo.consultasAnonimizadas} consulta(s) anonimizada(s))`);
+    await carregar();
+    return undefined;
   });
 
   $('#btnRelease').addEventListener('click', async () => {

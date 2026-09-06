@@ -432,3 +432,6 @@ button.ghost.light:hover { color: #fff; background: rgba(255, 255, 255, .12); }
 @media (prefers-color-scheme: dark) {
   .banner { background: #3a2f12; color: #ffd98a; border-color: #6b5410; }
 }
+
+button.ghost.danger { color: var(--danger); border-color: rgba(211, 47, 47, .45); }
+button.ghost.danger:hover { background: rgba(211, 47, 47, .1); color: var(--danger); }

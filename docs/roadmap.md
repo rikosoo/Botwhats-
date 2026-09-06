@@ -3,7 +3,7 @@
 Anotações vindas de conteúdo sobre captação e follow-up em consultório, traduzidas para onde
 cada uma encaixa neste código. Nada aqui está implementado ainda.
 
-**Feito:** 1, 5, 6, 7 e 8 — e a cadência do item 2 (7/3 dias, sem contagem regressiva). **Na fila:** 4 → 2 (conteúdo por toque) → 3.
+**Feito:** 1, 4, 5, 6, 7 e 8 — e a cadência do item 2 (7/3 dias, sem contagem regressiva). **Na fila:** 2 (conteúdo por toque) → 3.
 
 ---
 
@@ -71,6 +71,8 @@ no WhatsApp, melhor para a LGPD e para o paciente.
 ---
 
 ## 4. Escassez verdadeira, calculada da agenda (toque do dia 11)
+
+> ✅ **Implementado.** `agenda.ocupacao(7)` alimenta o follow-up e aparece na aba Números.
 
 **Ideia.** Avisar que as datas próximas estão enchendo funciona; inventar isso queima a clínica,
 porque o paciente percebe quando a vaga "que ia acabar" continua lá na semana seguinte.
@@ -228,6 +230,9 @@ Link de Pix na confirmação da primeira consulta. É a medida com efeito mais d
 consultório particular. Exige tratar reembolso e cancelamento com regra clara.
 
 ## F. LGPD na prática
+
+> ✅ **Implementado** o essencial: exportar, apagar e retenção automática das conversas.
+> Falta registrar consentimento de forma auditável e automatizar o backup fora da máquina.
 
 Apagar os dados de um paciente a pedido dele, política de retenção (o histórico não precisa ficar
 para sempre), registro de consentimento e backup do banco. Hoje o `db.json` não tem nada disso.

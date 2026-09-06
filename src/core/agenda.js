@@ -183,6 +183,42 @@ class Agenda {
     return dias;
   }
 
+  /**
+   * Quanto da agenda dos próximos dias já está tomado.
+   *
+   * Serve para o bot só falar em "datas enchendo" quando for verdade: escassez
+   * inventada é percebida na semana seguinte, quando a vaga que ia acabar
+   * continua lá — e aí nenhuma mensagem do consultório é levada a sério.
+   */
+  ocupacao(dias = 7, now = new Date()) {
+    let livres = 0;
+    let ocupados = 0;
+    let cursor = dateKey(now, this.timezone);
+
+    for (let i = 0; i < dias; i += 1) {
+      for (const profissional of this.clinic.professionals) {
+        const grade = this.slotsFor(cursor, {
+          professionalId: profissional.id, includePast: true, now,
+        }).length;
+        const reservados = this.store.state.bookings.filter(
+          (b) => b.date === cursor && b.professionalId === profissional.id && b.status === 'confirmado',
+        ).length;
+        livres += grade;
+        ocupados += reservados;
+      }
+      cursor = addDaysToKey(cursor, 1);
+    }
+
+    const total = livres + ocupados;
+    return {
+      dias,
+      total,
+      ocupados,
+      livres,
+      percentual: total ? Math.round((ocupados / total) * 100) : 0,
+    };
+  }
+
   /** Agenda do dia por profissional — usado pelo painel da secretaria. */
   dayView(dateStr) {
     return this.clinic.professionals.map((p) => ({

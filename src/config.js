@@ -45,6 +45,12 @@ const config = {
   // Marque como true quando o painel estiver atras de HTTPS.
   cookieSecure: process.env.COOKIE_SECURE === 'true',
 
+  // Ocupacao (%) a partir da qual o bot pode dizer que a agenda esta enchendo.
+  scarcityThreshold: Number(process.env.SCARCITY_THRESHOLD || 80),
+
+  // Retencao das conversas (LGPD). 0 desliga a limpeza automatica.
+  messageRetentionDays: Number(process.env.MESSAGE_RETENTION_DAYS || 365),
+
   // Prazo (min) que a pessoa tem para responder a uma vaga oferecida.
   waitlistOfferMinutes: Number(process.env.WAITLIST_OFFER_MINUTES || 120),
 

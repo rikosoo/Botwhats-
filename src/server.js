@@ -5,6 +5,7 @@ const express = require('express');
 
 const { SEGMENTOS, VARIAVEIS } = require('./core/broadcast');
 const { indicadores } = require('./core/metrics');
+const { exportarPaciente, apagarPaciente } = require('./core/privacy');
 const { normalizarConvenios, conveniosAtivos } = require('./clinic');
 
 function createServer(app) {
@@ -127,6 +128,7 @@ function createServer(app) {
         .filter((e) => ['aguardando', 'oferecido'].includes(e.status))
         .map((e, i) => ({ ...e, posicao: i + 1 })),
       metrics: indicadores(store),
+      ocupacao: agenda.ocupacao(7),
       agendaDays: agenda.nextAvailableDays(7, {
         professionalId: store.clinic.professionals[0] && store.clinic.professionals[0].id,
       }),
@@ -189,6 +191,20 @@ function createServer(app) {
     if (req.body && req.body.note) store.addNote(contact.id, req.body.note);
     store.commit('contact', contact);
     return res.json(contact);
+  });
+
+  // LGPD: cópia dos dados (portabilidade) e exclusão a pedido do paciente.
+  server.get('/api/contacts/:id/export', (req, res) => {
+    const dados = exportarPaciente(store, req.params.id);
+    if (!dados) return res.status(404).json({ error: 'paciente não encontrado' });
+    store.logEvent('privacidade', `Dados de ${dados.paciente.nome || dados.paciente.telefone} exportados`);
+    return res.json(dados);
+  });
+
+  server.delete('/api/contacts/:id', (req, res) => {
+    const resumo = apagarPaciente(store, req.params.id);
+    if (!resumo) return res.status(404).json({ error: 'paciente não encontrado' });
+    return res.json(resumo);
   });
 
   server.post('/api/contacts/:id/followups', (req, res) => {

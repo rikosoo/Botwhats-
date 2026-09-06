@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "seed": "node scripts/seed.js",
+    "demo": "node scripts/demo.js",
     "test": "node --test test/*.test.js"
   },
   "engines": {

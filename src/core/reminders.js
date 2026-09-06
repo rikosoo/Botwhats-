@@ -11,11 +11,19 @@ class Reminders {
    * @param {object} config
    * @param {(phone: string, text: string) => Promise<any>} send
    */
-  constructor(store, config, send) {
+  constructor(store, config, send, agenda = null) {
     this.store = store;
     this.config = config;
     this.send = send;
+    this.agenda = agenda;
     this.timer = null;
+  }
+
+  /** A agenda está cheia de verdade nos próximos dias? */
+  agendaCheia() {
+    if (!this.agenda) return false;
+    const limite = this.config.scarcityThreshold || 80;
+    return this.agenda.ocupacao(7).percentual >= limite;
   }
 
   get clinic() {
@@ -148,7 +156,7 @@ class Reminders {
     if (reminder.kind === 'retorno') return M.lembreteRetorno(this.clinic, contato, reminder.offsetDays);
     if (reminder.kind === 'campanha') return null; // sem texto salvo, não inventa mensagem
     if (reminder.kind === 'falta') return M.lembreteFalta(this.clinic, contato);
-    return M.lembreteFollowUp(this.clinic, contato, reminder.offsetDays);
+    return M.lembreteFollowUp(this.clinic, contato, reminder.offsetDays, this.agendaCheia());
   }
 
   /** Um lembrete só sai se ainda fizer sentido para o paciente. */

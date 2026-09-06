@@ -53,6 +53,24 @@ O conteúdo da mídia **não é baixado nem armazenado** — áudio e imagem de 
 dado clínico, e o consultório não precisa de cópia disso no servidor. Fica registrado só o tipo, e
 a recepção abre a mensagem no WhatsApp.
 
+## Privacidade dos pacientes (LGPD)
+
+O consultório é o controlador desses dados, então exportar e apagar precisam ser um botão — não uma
+tarefa de banco de dados. No cabeçalho da conversa:
+
+- **⬇ Dados** baixa um JSON com tudo o que existe sobre a pessoa: cadastro, conversa, consultas,
+  lembretes e lista de espera (portabilidade).
+- **🗑 Apagar** remove em definitivo cadastro, conversas, lembretes, entradas na fila, o nome nas
+  listas de disparo e as menções na linha do tempo do painel. Para evitar o clique errado na
+  correria, é preciso escrever o nome do paciente.
+
+Uma decisão consciente na exclusão: **as consultas ficam, anonimizadas**. Apagá-las junto mudaria a
+taxa de falta retroativamente e o consultório passaria a confiar num número errado. O que sobra é
+data, profissional, duração e se compareceu — nada que identifique alguém.
+
+Além disso, conversas com mais de `MESSAGE_RETENTION_DAYS` (padrão: 365) são apagadas
+automaticamente. Cadastro e histórico de consultas continuam.
+
 ## Colocar no ar
 
 Para rodar num servidor com acesso só seu, veja [`docs/deploy-aws.md`](docs/deploy-aws.md): EC2 com
@@ -226,10 +244,18 @@ Dentro do painel, **Ajustes → Acesso**:
 ## Como rodar
 
 ```bash
-npm install
+npm install --omit=optional
 cp .env.example .env
-npm run seed     # opcional: popula com um dia típico de consultório
-npm start        # painel em http://localhost:3000
+npm run demo     # popula um consultório de exemplo e sobe o painel
+```
+
+Painel em <http://localhost:3000>, entrando com `Henrique` / `Henrique123`. O passo a passo com o
+roteiro de teste está em [`docs/rodar-local.md`](docs/rodar-local.md).
+
+Para rodar sem os dados de exemplo:
+
+```bash
+npm start
 ```
 
 Com `CHANNEL=mock` (padrão) nada é enviado de verdade: você conversa com o bot pelo simulador do painel.
@@ -270,6 +296,8 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
+| `MESSAGE_RETENTION_DAYS` | `365` | Apaga conversas mais antigas que isso (0 desliga) |
+| `SCARCITY_THRESHOLD` | `80` | Ocupação (%) a partir da qual o bot pode falar em agenda enchendo |
 | `WAITLIST_OFFER_MINUTES` | `120` | Prazo para responder a uma vaga oferecida |
 | `WAIT_TOUCH_MIN_DAYS` | `10` | Silêncio mínimo entre marcar e o primeiro lembrete para valer o toque do meio |
 | `BROADCAST_DELAY_MS` | `2500` | Intervalo entre as mensagens de um disparo |
@@ -307,6 +335,8 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `DELETE` | `/api/reminders/:id` | Cancela um lembrete |
 | `POST` | `/api/waitlist` | Coloca um paciente na lista de espera |
 | `DELETE` | `/api/waitlist/:id` | Tira o nome da lista |
+| `GET` | `/api/contacts/:id/export` | Cópia de tudo o que existe sobre o paciente |
+| `DELETE` | `/api/contacts/:id` | Apaga os dados pessoais (consultas ficam anonimizadas) |
 | `GET` | `/api/metrics?dias=30` | Taxa de falta geral, por profissional e por confirmação |
 | `GET` | `/api/segments/:id` | Quem está no segmento (id, nome, telefone, situação) |
 | `POST` | `/api/broadcast/preview` | Prévia: quantos recebem, quem fica de fora, texto preenchido |
@@ -334,11 +364,12 @@ src/
   core/metrics.js     taxa de falta e efeito da confirmação
   core/waitlist.js    fila de espera e oferta automática de vaga
   core/auth.js        login, sessões e troca de senha
+  core/privacy.js     exportar, apagar e reter dados de paciente
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 90 testes com node:test
+test/                 98 testes com node:test
 ```
 
 ## Testes
@@ -352,7 +383,8 @@ profissional e duração, as quatro famílias de lembrete, a conversa inteira de
 remarcação, cancelamento e handoff, e o disparo — segmentação, variáveis, exclusão de opt-out
 e de números repetidos, teto por disparo e envio agendado. Também a régua de lembretes nova — o
 toque do meio da espera, o check-in do dia seguinte, o encaminhamento da dúvida pós-consulta para
-a recepção — e o cálculo da taxa de falta, incluindo o caso em que a presença não foi registrada.
+a recepção — o cálculo da taxa de falta, incluindo o caso em que a presença não foi registrada, o
+login do painel e a exclusão de dados de paciente.
 
 ## Próximos passos
 

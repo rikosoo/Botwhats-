@@ -375,8 +375,15 @@ const M = {
 
   // ---------- lembretes ----------
 
-  lembreteFollowUp(clinic, contato, dias) {
+  lembreteFollowUp(clinic, contato, dias, agendaCheia = false) {
     const nome = primeiroNome(contato) || 'tudo bem';
+
+    // Só falamos em agenda enchendo quando ela está enchendo de verdade.
+    if (agendaCheia && dias !== 1) {
+      return `Oi, ${nome}! Passando para avisar que as próximas datas do ${clinic.name} estão quase fechando. `
+        + 'Se você ainda quer marcar, me diz que eu seguro um horário para você agora. 🙂';
+    }
+
     if (dias === 1) {
       return `Oi, ${nome}! Ontem você falou com o ${clinic.name} e não chegamos a marcar. `
         + 'Quer que eu veja os horários desta semana?';
