@@ -57,6 +57,7 @@ class WhatsAppWebChannel {
     this.onMessage = null;
     this.client = null;
     this.pronto = false;
+    this.conectadoEm = null;
   }
 
   async start() {
@@ -112,6 +113,7 @@ class WhatsAppWebChannel {
     this.client.on('ready', () => {
       this.qr = null;
       this.pronto = true;
+      this.conectadoEm = Date.now();
       this.status = 'conectado';
       console.log('[whatsapp] conectado');
     });
@@ -142,7 +144,19 @@ class WhatsAppWebChannel {
        */
       const quando = Number(msg.timestamp || 0) * 1000;
       const limite = (this.config.ignoreOlderThanMinutes || 10) * 60000;
-      const antiga = quando > 0 && Date.now() - quando > limite;
+      const velha = quando > 0 && Date.now() - quando > limite;
+
+      /*
+       * A fila acumulada chega nos primeiros segundos depois de conectar, e
+       * parte dela tem horario recente — passaria pelo filtro acima. Por isso
+       * a janela de silencio logo apos a conexao: nada e respondido, tudo e
+       * registrado. Sem isso, reconectar o aparelho vira uma rajada de
+       * respostas para quem escreveu enquanto o numero esteve fora.
+       */
+      const silencio = (this.config.connectQuietSeconds || 30) * 1000;
+      const recemConectado = this.conectadoEm !== null && Date.now() - this.conectadoEm < silencio;
+
+      const antiga = velha || recemConectado;
 
       // Audio, foto e documento nao podem cair no vazio: o paciente acha que
       // falou com o consultorio e ninguem respondeu.

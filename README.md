@@ -94,8 +94,10 @@ Quando o número conecta, o WhatsApp entrega tudo o que chegou enquanto ele este
 inclusive conversas de semanas atrás. Responder isso de uma vez faria o paciente receber, do nada,
 uma resposta para uma mensagem antiga.
 
-Por isso, mensagem com mais de `IGNORE_OLDER_THAN_MINUTES` (padrão: 10 minutos) é **registrada no
-painel e mandada para a fila da recepção, sem resposta automática**. Se a pessoa escrever de novo,
+Duas travas cuidam disso. Mensagem com mais de `IGNORE_OLDER_THAN_MINUTES` (padrão: 10 minutos) é
+**registrada no painel e mandada para a fila da recepção, sem resposta automática**. E nos primeiros
+`CONNECT_QUIET_SECONDS` (padrão: 30 s) depois de conectar, **nada é respondido** — é exatamente
+quando a fila acumulada chega, e parte dela tem horário recente, que passaria pelo filtro de tempo. Se a pessoa escrever de novo,
 aí sim o bot atende normalmente. Grupos e status também são ignorados.
 
 ## Quando o WhatsApp não está conectado
@@ -396,6 +398,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `PORT` | `3000` | Porta do painel |
 | `HOST` | `0.0.0.0` | Endereço de escuta; use `127.0.0.1` em servidor exposto |
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
+| `CONNECT_QUIET_SECONDS` | `30` | Silêncio logo após conectar, enquanto a fila acumulada chega |
 | `IGNORE_OLDER_THAN_MINUTES` | `10` | Mensagem mais antiga que isso não recebe resposta automática |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
