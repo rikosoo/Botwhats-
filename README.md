@@ -178,9 +178,11 @@ e consulta cancelada não gera aviso.
 
 ## Painel da recepção
 
-As oito abas do painel lateral ficam em duas linhas fixas — nada de rolagem que esconde a última:
+As oito seções do painel ficam numa caixa de seleção no alto da coluna da direita — em qualquer
+largura de tela, nenhuma fica escondida. **Mensagens** é onde se edita o texto do bot; **Ajustes**,
+onde ficam convênios, horários e senha.
 
-![abas do painel](docs/abas.png)
+![seletor de seção](docs/secoes.png)
 
 - **Hoje**: agenda do dia por profissional, com botões *Confirmar*, *Compareceu*, *Faltou* e *Cancelar*.
 - **Fila e urgências**: pacientes que pediram atendente ou dispararam a triagem sobem para o topo, com selo vermelho.

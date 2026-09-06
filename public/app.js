@@ -683,8 +683,10 @@ function baixarCsv() {
 }
 
 function abrirAba(id) {
-  const tab = document.querySelector(`.tab[data-tab="${id}"]`);
-  if (tab) tab.click();
+  const seletor = $('#tabSelect');
+  if (!seletor) return;
+  seletor.value = id;
+  seletor.dispatchEvent(new Event('change'));
 }
 
 /** Aba Disparo: escolher o grupo, escrever a mensagem e enviar. */
@@ -1431,15 +1433,21 @@ function ligarEventos() {
     await enviar($('#sendAs').value, texto);
   });
 
-  for (const tab of document.querySelectorAll('.tab')) {
-    tab.addEventListener('click', () => {
-      state.tab = tab.dataset.tab;
-      document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t === tab));
-      document.querySelectorAll('.tab-panel').forEach((p) => {
-        p.classList.toggle('active', p.id === `tab-${state.tab}`);
-      });
+  // Uma caixa de seleção em vez de abas: cabe em qualquer largura e nenhuma
+  // seção fica escondida atrás de rolagem.
+  const seletor = $('#tabSelect');
+  const trocarSecao = () => {
+    state.tab = seletor.value;
+    localStorage.setItem('secaoPainel', state.tab);
+    document.querySelectorAll('.tab-panel').forEach((p) => {
+      p.classList.toggle('active', p.id === `tab-${state.tab}`);
     });
-  }
+  };
+  seletor.addEventListener('change', trocarSecao);
+
+  const guardada = localStorage.getItem('secaoPainel');
+  if (guardada && seletor.querySelector(`option[value="${guardada}"]`)) seletor.value = guardada;
+  trocarSecao();
 
   const stream = new EventSource('/api/stream');
   let agendado = null;

@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Recepção · Autoatendimento</title>
-  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <div id="loginScreen" class="login-screen" hidden>
@@ -83,15 +83,17 @@
     </section>
 
     <section class="card side">
-      <div class="tabs" role="tablist">
-        <button class="tab active" data-tab="hoje">Hoje</button>
-        <button class="tab" data-tab="agenda">Agenda</button>
-        <button class="tab" data-tab="lembretes">Lembretes</button>
-        <button class="tab" data-tab="disparo">Disparo</button>
-        <button class="tab" data-tab="numeros">Números</button>
-        <button class="tab" data-tab="atividade">Atividade</button>
-        <button class="tab" data-tab="mensagens">Mensagens</button>
-        <button class="tab" data-tab="config">Ajustes</button>
+      <div class="section-picker">
+        <select id="tabSelect" aria-label="Seção do painel">
+          <option value="hoje">📅 Hoje — agenda do dia, presença e faltas</option>
+          <option value="agenda">🗓️ Agenda — próximas consultas e lista de espera</option>
+          <option value="lembretes">🔔 Lembretes — o que está programado para sair</option>
+          <option value="disparo">📣 Disparo — mensagem para um grupo de pacientes</option>
+          <option value="numeros">📊 Números — taxa de falta e ocupação</option>
+          <option value="atividade">🕘 Atividade — o que aconteceu no dia</option>
+          <option value="mensagens">✍️ Mensagens — editar o que o bot fala</option>
+          <option value="config">⚙️ Ajustes — convênios, horários, senha e dados</option>
+        </select>
       </div>
       <div class="tab-panel active" id="tab-hoje"></div>
       <div class="tab-panel" id="tab-agenda"></div>
@@ -105,6 +107,6 @@
   </main>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

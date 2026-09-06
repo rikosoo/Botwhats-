@@ -3,6 +3,40 @@
 Antes de colocar num servidor, vale rodar tudo na sua máquina: o modo demonstração usa um canal
 simulado, então **nada é enviado no WhatsApp** e nenhum paciente real é tocado.
 
+## Começar do zero (recomendado se algo estiver estranho)
+
+Apaga a pasta antiga e baixa tudo de novo — resolve versão desatualizada, dependência quebrada e
+arquivo em cache de uma vez.
+
+**Windows (PowerShell):**
+
+```powershell
+cd $HOME\Desktop
+Remove-Item -Recurse -Force Botwhats- -ErrorAction SilentlyContinue
+git clone https://github.com/rikosoo/Botwhats-.git
+cd Botwhats-
+git checkout claude/whatsapp-bot-reminders-calendar-vsf20z
+npm install --omit=optional
+npm run demo
+```
+
+**Mac ou Linux:**
+
+```bash
+cd ~/Desktop
+rm -rf Botwhats-
+git clone https://github.com/rikosoo/Botwhats-.git
+cd Botwhats-
+git checkout claude/whatsapp-bot-reminders-calendar-vsf20z
+npm install --omit=optional
+npm run demo
+```
+
+Depois abra <http://localhost:3000> — de preferência numa **janela anônima**, que ignora o que o
+navegador guardou de versões anteriores. Entre com `Henrique` / `Henrique123`.
+
+Para parar: `Ctrl + C` no terminal.
+
 ## 1. Instalar o Node
 
 Precisa do **Node 20 ou mais novo**. Baixe em <https://nodejs.org> (versão LTS) e confira:
@@ -58,9 +92,18 @@ paciente e vê a resposta do bot na hora. Vale experimentar:
 | 🎤 **Áudio** / 📷 **Foto** | Simula mídia: o bot responde e chama a recepção |
 | `não quero mais receber mensagens` | Opt-out, cancela todos os lembretes |
 
-Nas abas da direita: **Hoje** (marcar compareceu/faltou), **Agenda** (lista de espera e encaixe),
-**Lembretes** (fila do que vai sair, com *enviar agora*), **Disparo**, **Números** (taxa de falta) e
-**Ajustes** (dados do consultório, convênios, agenda dos médicos e troca de senha).
+No alto da coluna da direita há uma **caixa de seleção** com as oito seções do painel:
+
+| Seção | O que tem lá |
+| --- | --- |
+| 📅 Hoje | Agenda do dia; marcar *compareceu* / *faltou* / *confirmar* |
+| 🗓️ Agenda | Próximas consultas, lista de espera e horários livres para encaixe |
+| 🔔 Lembretes | Fila do que vai sair, com *enviar agora* e *cancelar* |
+| 📣 Disparo | Mensagem para um grupo de pacientes |
+| 📊 Números | Taxa de falta, confirmou × não confirmou, ocupação |
+| 🕘 Atividade | Linha do tempo do que aconteceu |
+| ✍️ Mensagens | **Editar os textos que o bot fala** |
+| ⚙️ Ajustes | **Convênios**, dados do consultório, agenda dos médicos e troca de senha |
 
 Para ver a lista de espera funcionando: cancele uma consulta futura na aba Agenda e veja a vaga
 sendo oferecida a quem está na fila.

@@ -163,22 +163,18 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .quick button:hover { color: var(--text); }
 
 /* Painel lateral */
-/* Grade fixa de 4 colunas: com 8 abas dá exatamente duas linhas, sempre.
-   Rolagem lateral e quebra automática já escondiam "Ajustes" em tela menor —
-   e ninguém procura o que não vê. */
-.tabs {
-  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
-  border-bottom: 1px solid var(--line); background: var(--card-2); flex: 0 0 auto;
+/* Seletor de seção. Abas em fita dependiam da largura da tela e escondiam as
+   últimas opções; uma caixa de seleção mostra todas em qualquer tamanho. */
+.section-picker {
+  padding: 10px; border-bottom: 1px solid var(--line);
+  background: var(--card-2); flex: 0 0 auto;
 }
-.tab {
-  background: transparent; color: var(--muted); border: 0;
-  border-bottom: 2px solid transparent; border-radius: 0; padding: 9px 4px;
-  font-size: 11.5px; font-weight: 600; line-height: 1.2;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+.section-picker select {
+  width: 100%; background: var(--bg-soft); border: 1px solid var(--line);
+  border-radius: 9px; padding: 9px 10px; color: var(--text);
+  font-size: 13px; font-weight: 600; cursor: pointer;
 }
-.tab:nth-child(-n+4) { border-top: 0; }
-.tab:nth-child(n+5) { border-top: 1px solid var(--line); }
-.tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.section-picker select:focus { outline: 2px solid var(--accent-2); outline-offset: 1px; }
 .tab-panel { display: none; padding: 12px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .tab-panel.active { display: block; }
 .card.side { height: calc(100vh - 190px); }
