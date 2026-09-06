@@ -13,7 +13,13 @@ function createServer(app) {
   const { store, agenda, reminders, broadcast, waitlist, auth, channel, config } = app;
   const server = express();
   server.use(express.json());
-  server.use(express.static(path.join(__dirname, '..', 'public')));
+  // O painel é atualizado junto com o código: sem isto, o navegador continua
+  // servindo o CSS e o JS antigos e a atualização "não aparece".
+  server.use(express.static(path.join(__dirname, '..', 'public'), {
+    etag: true,
+    maxAge: 0,
+    setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+  }));
 
   // Sinal de vida para monitoramento, sem contar nada sobre pacientes.
   server.get('/api/ping', (req, res) => res.json({ ok: true, channel: channel.name, status: channel.status }));

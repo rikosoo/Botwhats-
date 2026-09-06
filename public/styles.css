@@ -163,17 +163,21 @@ button.danger { background: transparent; color: var(--danger); border: 1px solid
 .quick button:hover { color: var(--text); }
 
 /* Painel lateral */
-/* As abas quebram em duas linhas quando não cabem: rolagem lateral escondia
-   "Ajustes" em tela menor, e ninguém procura o que não vê. */
+/* Grade fixa de 4 colunas: com 8 abas dá exatamente duas linhas, sempre.
+   Rolagem lateral e quebra automática já escondiam "Ajustes" em tela menor —
+   e ninguém procura o que não vê. */
 .tabs {
-  display: flex; flex-wrap: wrap; border-bottom: 1px solid var(--line);
-  background: var(--card-2); flex: 0 0 auto;
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-bottom: 1px solid var(--line); background: var(--card-2); flex: 0 0 auto;
 }
 .tab {
-  flex: 1 1 auto; background: transparent; color: var(--muted); border: 0;
-  border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 8px;
-  font-size: 12px; font-weight: 600; white-space: nowrap;
+  background: transparent; color: var(--muted); border: 0;
+  border-bottom: 2px solid transparent; border-radius: 0; padding: 9px 4px;
+  font-size: 11.5px; font-weight: 600; line-height: 1.2;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
 }
+.tab:nth-child(-n+4) { border-top: 0; }
+.tab:nth-child(n+5) { border-top: 1px solid var(--line); }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }
 .tab-panel { display: none; padding: 12px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
 .tab-panel.active { display: block; }
