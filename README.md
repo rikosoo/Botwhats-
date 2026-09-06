@@ -96,6 +96,8 @@ na fila da recepção, com uma faixa fixa no topo para ninguém esquecer que est
 já programados continuam saindo. No mesmo bloco fica **Desconectar este número**, que desvincula o
 aparelho e mostra um QR novo.
 
+![atendimento automático desligado](docs/bot-desligado.png)
+
 ## HTTPS
 
 Com `certs/painel.crt` e `certs/painel.key` presentes, o servidor sobe em HTTPS sozinho e o cookie
