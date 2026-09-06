@@ -285,7 +285,8 @@ npm run certificado 18.219.126.21     # troque pelo IP da sua instância
 sudo systemctl restart botwhats
 ```
 
-Agora acesse **`https://SEU_IP:3000`**. O navegador vai avisar que o certificado não é de uma
+Agora acesse **`https://SEU_IP:3000`**. Se digitar `http://` por engano, o servidor redireciona
+sozinho — a mesma porta atende os dois. O navegador vai avisar que o certificado não é de uma
 autoridade conhecida — é esperado, porque quem assinou foi o próprio servidor. Em
 **Avançado → Prosseguir**, a conexão passa a ser criptografada do mesmo jeito. O aviso incomoda, mas
 o problema real (dados em texto puro na rede) fica resolvido.
@@ -356,6 +357,7 @@ Chrome, pacotes, swap e sessão do WhatsApp, e diz o comando de cada pendência.
 | QR Code dá "inválido" no celular | O código expira em segundos. Leia o que está **no painel naquele instante** (ele se renova sozinho), nunca de um print ou de um log antigo |
 | Painel preso em "Status: iniciando" | O Chrome não abriu. Rode `journalctl -u botwhats -n 80 --no-pager`; a causa costuma ser permissão de HOME ou memória. O `deploy/botwhats.service` novo já resolve os dois — copie-o de novo e reinicie |
 | QR sempre inválido, mesmo lendo na hora | O serviço pode estar reiniciando por memória. Veja `journalctl -u botwhats -n 50` e confirme o swap com `free -h` |
+| `ERR_EMPTY_RESPONSE` na porta 3000 | A porta responde mas o servidor fechou a conexão. Quase sempre é o serviço reiniciando: `journalctl -u botwhats -n 60 --no-pager`. Se você acabou de gerar certificado, atualize o código — a versão nova aceita http e https na mesma porta |
 | `https://` dá erro de certificado | Se você gerou o certificado próprio, é o aviso esperado: Avançado → Prosseguir |
 | Atualizei e sumiram os pacientes | Não é a atualização: `data/` fica fora do git. Confira `ls -la data/` e as cópias em `~/backups` |
 | `ssh` não conecta | Seu IP mudou. Atualize a regra do grupo de segurança para **Meu IP** |

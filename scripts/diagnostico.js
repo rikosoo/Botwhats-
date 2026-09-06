@@ -33,6 +33,10 @@ const envPath = path.join(raiz, '.env');
 if (fs.existsSync(envPath)) ok('Arquivo .env encontrado');
 else aviso('Não há .env', 'Rode: cp .env.example .env — e edite os valores.');
 
+const temCertificado = fs.existsSync(config.sslCert) && fs.existsSync(config.sslKey);
+if (temCertificado) ok('Certificado encontrado — o painel sobe em HTTPS');
+else linhas.push('  ℹ️  Sem certificado: o painel sobe em HTTP (rode "npm run certificado SEU_IP")');
+
 linhas.push(`  ℹ️  Canal: ${config.channel} · escutando em ${config.host}:${config.port} · fuso ${config.timezone}`);
 
 if (config.channel === 'whatsapp') {
@@ -93,8 +97,12 @@ if (config.host === '127.0.0.1') {
   console.log('      ssh -i chave.pem -L 3000:127.0.0.1:3000 ubuntu@SEU_IP');
   console.log('    Abrir o IP do servidor direto no navegador nunca vai funcionar assim.');
 } else {
-  console.log(`    Escutando em ${config.host}:${config.port} — acessível pela rede,`);
-  console.log('    desde que a porta esteja liberada no grupo de segurança para o seu IP.');
+  const esquema = temCertificado ? 'https' : 'http';
+  console.log(`    ${esquema}://SEU_IP:${config.port} — com a porta liberada no grupo de segurança.`);
+  if (temCertificado) {
+    console.log('    Digitar http:// também funciona: o servidor redireciona para https.');
+    console.log('    O navegador avisa que o certificado é do próprio servidor: Avançado → Prosseguir.');
+  }
 }
 
 if (problemas.length) {

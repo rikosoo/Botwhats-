@@ -1,7 +1,9 @@
 'use strict';
 
 const fs = require('fs');
+const http = require('http');
 const https = require('https');
+const net = require('net');
 
 const config = require('./config');
 const { createApp } = require('./app');
@@ -21,6 +23,38 @@ function ouvinteHttps() {
   }
 }
 
+/**
+ * Com certificado, a mesma porta atende HTTPS e também HTTP — neste caso
+ * redirecionando. Sem isso, quem digita "http://" recebe uma tela de erro seca
+ * (ERR_EMPTY_RESPONSE), porque o servidor esperava TLS e fecha a conexão.
+ *
+ * A primeira letra do que o cliente envia entrega o protocolo: 0x16 é o começo
+ * de um handshake TLS; qualquer outra coisa é HTTP em texto.
+ */
+function montarOuvinte(app, certificado) {
+  if (!certificado) return http.createServer(app);
+
+  const seguro = https.createServer(certificado, app);
+  const redirecionador = http.createServer((req, res) => {
+    const host = String(req.headers.host || '').split(':')[0];
+    res.writeHead(301, { Location: `https://${host}:${config.port}${req.url}` });
+    res.end('Use https://');
+  });
+
+  return net.createServer((socket) => {
+    socket.once('error', () => socket.destroy());
+    socket.once('data', (primeiro) => {
+      // Pausar antes de devolver os bytes é o que faz o TLS enxergar o
+      // handshake inteiro; sem isso o HTTPS fecha a conexão sem responder.
+      socket.pause();
+      socket.unshift(primeiro);
+      const destino = primeiro[0] === 0x16 ? seguro : redirecionador;
+      destino.emit('connection', socket);
+      process.nextTick(() => socket.resume());
+    });
+  });
+}
+
 async function main() {
   const certificado = ouvinteHttps();
   // Cookie de sessão só volta marcado como seguro quando há HTTPS de verdade.
@@ -28,7 +62,7 @@ async function main() {
 
   const app = createApp(config);
   const { server } = createServer(app);
-  const ouvinte = certificado ? https.createServer(certificado, server) : server;
+  const ouvinte = montarOuvinte(server, certificado);
 
   app.reminders.start();
   app.waitlist.start();
