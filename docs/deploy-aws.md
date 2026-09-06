@@ -105,6 +105,9 @@ git checkout claude/whatsapp-bot-reminders-calendar-vsf20z
 PUPPETEER_SKIP_DOWNLOAD=true npm ci
 ```
 
+O `npm ci` já instala o `whatsapp-web.js` e o `qrcode` (que desenha o QR no painel), porque estão
+como dependências opcionais do projeto.
+
 ## 5. Configurar
 
 ```bash
@@ -139,21 +142,26 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now botwhats
 ```
 
-Agora leia o QR Code do WhatsApp:
+Acompanhe a subida com `journalctl -u botwhats -f` (saia com `Ctrl+C`; o serviço continua rodando).
 
-```bash
-journalctl -u botwhats -f
-```
+## 7. Ligar o seu WhatsApp
 
-O QR aparece desenhado no terminal. No celular: **WhatsApp → Aparelhos conectados → Conectar um
-aparelho**. Depois de ler, a linha `[whatsapp] conectado` aparece e a sessão fica salva em
-`.wwebjs_auth/` — não precisa repetir a cada reinício. Saia do log com `Ctrl+C` (o serviço continua
-rodando).
+O QR Code aparece **no próprio painel** — não precisa caçar no log. Abra o túnel (passo 8), entre no
+painel e vá em **Ajustes → Conexão do WhatsApp**:
 
-Use um número dedicado ao consultório. O aparelho que já usa esse número continua funcionando, mas
-todas as mensagens passam a ser respondidas pelo bot.
+![QR Code no painel](qrcode.png)
 
-## 7. Acessar o painel
+No celular: **WhatsApp → Aparelhos conectados → Conectar um aparelho**, e aponte a câmera para o
+código. O bloco muda para *"✅ WhatsApp conectado"* sozinho.
+
+O código se renova a cada poucos segundos, e o painel acompanha — leia sempre o que estiver na tela.
+A sessão fica salva em `.wwebjs_auth/`, então reiniciar o servidor não pede QR de novo. Se o
+aparelho for desconectado algum dia, o QR reaparece nesse mesmo lugar.
+
+> **Use um número dedicado ao consultório.** O aparelho que já usa o número continua funcionando
+> normalmente, mas toda mensagem que chegar passa a ser respondida pelo bot.
+
+## 8. Acessar o painel
 
 No **seu computador** (não no servidor):
 
@@ -176,7 +184,7 @@ Host botwhats
 
 Aí basta `ssh botwhats` e abrir <http://localhost:3000>.
 
-## 8. Backup
+## 9. Backup
 
 O `data/db.json` guarda os pacientes e o `.wwebjs_auth/` guarda a sessão do WhatsApp. Perder o
 primeiro é perder a agenda.
@@ -194,7 +202,7 @@ de `s3:PutObject` só nesse bucket, e defina `BACKUP_S3=s3://seu-bucket/botwhats
 Vale também ligar snapshots automáticos do disco: **EC2 → Ciclo de vida de dados → Criar política**,
 diária, retendo 7 cópias.
 
-## 9. Manutenção
+## 10. Manutenção
 
 ```bash
 # atualizar o código
@@ -255,5 +263,5 @@ mundo — só faz sentido quando mais gente da equipe precisar entrar.
 | `ssh` não conecta | Seu IP mudou. Atualize a regra do grupo de segurança para **Meu IP** |
 | O painel não abre no `localhost:3000` | O túnel caiu junto com o terminal do `ssh -L`. Reabra |
 | Serviço reiniciando sozinho | Memória. Confirme o swap (`free -h`) ou suba para `t3.small`/`t3.medium` |
-| QR Code não aparece | `journalctl -u botwhats -n 200`. Falta de biblioteca do Chrome aparece aqui |
+| QR Code não aparece no painel | Confirme `CHANNEL=whatsapp` no `.env` e veja `journalctl -u botwhats -n 200`: falta de biblioteca do Chrome aparece aí |
 | WhatsApp desconectou | Normal de tempos em tempos: leia o novo QR pelo log |

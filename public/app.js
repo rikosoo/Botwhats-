@@ -1540,6 +1540,7 @@ function renderConfig() {
   });
   panel.append(salvar);
 
+  blocoWhatsApp(panel);
   blocoRegras(panel);
   blocoAcesso(panel);
 }
@@ -1689,6 +1690,66 @@ function ligarEventos() {
     clearTimeout(agendado);
     agendado = setTimeout(() => carregar().catch(() => {}), 250);
   };
+}
+
+/**
+ * Conexão do WhatsApp: status e QR Code direto no painel.
+ * Enquanto o código não é lido, consulta a cada 5s — o WhatsApp troca o QR
+ * sozinho de tempos em tempos, e um código velho não conecta.
+ */
+function blocoWhatsApp(panel) {
+  panel.append(el('hr'));
+  panel.append(el('div', 'day-title', 'Conexão do WhatsApp'));
+
+  const caixa = el('div', 'item');
+  caixa.id = 'blocoWhatsApp';
+  caixa.append(el('div', 'desc', 'Consultando…'));
+  panel.append(caixa);
+
+  const desenhar = (dados) => {
+    caixa.innerHTML = '';
+    if (dados.canal !== 'whatsapp') {
+      caixa.append(el('div', 'title', 'Modo simulador'));
+      caixa.append(el('div', 'desc',
+        'As mensagens ficam só neste painel. Para conectar um número de verdade, '
+        + 'coloque CHANNEL=whatsapp no arquivo .env do servidor e reinicie.'));
+      return;
+    }
+    if (dados.conectado) {
+      caixa.append(el('div', 'title', '✅ WhatsApp conectado'));
+      caixa.append(el('div', 'desc', 'O bot está atendendo. Se o aparelho for desconectado, o QR Code reaparece aqui.'));
+      return;
+    }
+
+    caixa.append(el('div', 'title', '📱 Conecte o número do consultório'));
+    caixa.append(el('div', 'desc',
+      `Status: ${dados.status}. No celular: WhatsApp → Aparelhos conectados → Conectar um aparelho, `
+      + 'e aponte a câmera para o código abaixo.'));
+
+    if (dados.qrSvg) {
+      const moldura = el('div', 'qr-box');
+      moldura.innerHTML = dados.qrSvg;
+      caixa.append(moldura);
+      caixa.append(el('div', 'desc', 'O código muda sozinho a cada poucos segundos — sempre leia o que estiver na tela.'));
+    } else if (dados.qrTexto) {
+      caixa.append(el('div', 'desc',
+        'A biblioteca de desenho do QR não está instalada no servidor. '
+        + 'Rode "npm install qrcode" e reinicie, ou leia o código pelo terminal com '
+        + '"journalctl -u botwhats -f".'));
+    } else {
+      caixa.append(el('div', 'desc', 'Aguardando o servidor gerar o código…'));
+    }
+  };
+
+  const consultar = async () => {
+    if (!document.getElementById('blocoWhatsApp')) return; // saiu da tela
+    try {
+      const dados = await api('/api/whatsapp');
+      desenhar(dados);
+      if (!dados.conectado && dados.canal === 'whatsapp') setTimeout(consultar, 5000);
+    } catch { /* sessão caiu; o login cuida disso */ }
+  };
+  consultar();
 }
 
 /** Regras dos lembretes e da agenda, sem precisar mexer no .env. */

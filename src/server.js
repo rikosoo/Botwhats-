@@ -351,6 +351,34 @@ function createServer(app) {
     return res.json(reminder);
   });
 
+  // ---------- conexão do WhatsApp ----------
+
+  /**
+   * Estado da conexão e o QR Code já desenhado. Ler o código pelo painel evita
+   * a parte mais chata de colocar no ar: entrar por SSH e caçar o desenho no log.
+   */
+  server.get('/api/whatsapp', async (req, res) => {
+    const resposta = {
+      canal: channel.name,
+      status: channel.status,
+      conectado: channel.status === 'conectado',
+      qrSvg: null,
+      qrTexto: channel.qr || null,
+    };
+    if (channel.qr) {
+      try {
+        const qrcode = require('qrcode');
+        resposta.qrSvg = await qrcode.toString(channel.qr, {
+          type: 'svg', margin: 1, width: 260, errorCorrectionLevel: 'M',
+        });
+      } catch {
+        // Sem a biblioteca, o painel mostra o código em texto e o caminho do terminal.
+        resposta.qrSvg = null;
+      }
+    }
+    return res.json(resposta);
+  });
+
   // ---------- disparo de mensagens ----------
 
   // Quem está em cada segmento (id, nome, telefone, situação).

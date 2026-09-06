@@ -308,12 +308,16 @@ Com `CHANNEL=mock` (padrão) nada é enviado de verdade: você conversa com o bo
 ### Conectando no WhatsApp
 
 ```bash
-npm install whatsapp-web.js qrcode-terminal   # dependências opcionais
+npm install whatsapp-web.js qrcode qrcode-terminal   # dependências opcionais
 # no .env:  CHANNEL=whatsapp
 npm start
 ```
 
-Leia o QR Code do terminal em **WhatsApp › Aparelhos conectados**. A sessão fica salva em `.wwebjs_auth/`.
+O QR Code aparece **no painel**, em *Ajustes → Conexão do WhatsApp* (e também no terminal). Leia com
+**WhatsApp › Aparelhos conectados › Conectar um aparelho**. A sessão fica salva em `.wwebjs_auth/`,
+então reiniciar não pede o código de novo.
+
+![QR Code no painel](docs/qrcode.png)
 
 > `whatsapp-web.js` automatiza o WhatsApp Web e **não é API oficial**. Para uso comercial em escala,
 > o caminho suportado é a **WhatsApp Cloud API** da Meta. Trocar é simples: crie um adaptador em
@@ -363,6 +367,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `GET` | `/api/session` | Quem está logado |
 | `POST` | `/api/account/password` | Troca a senha (exige a atual) |
 | `POST` | `/api/account/username` | Troca o nome de usuário |
+| `GET` | `/api/whatsapp` | Estado da conexão e QR Code em SVG |
 | `GET` | `/api/ping` | Sinal de vida, público |
 | `GET` | `/api/state` | Snapshot completo do painel |
 | `GET` | `/api/stream` | Server-Sent Events: atualização em tempo real |
@@ -417,7 +422,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 112 testes com node:test
+test/                 121 testes com node:test
 ```
 
 ## Testes
