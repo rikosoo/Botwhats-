@@ -178,12 +178,16 @@ e consulta cancelada não gera aviso.
 
 ## Painel da recepção
 
+As oito abas do painel lateral ficam em duas linhas fixas — nada de rolagem que esconde a última:
+
+![abas do painel](docs/abas.png)
+
 - **Hoje**: agenda do dia por profissional, com botões *Confirmar*, *Compareceu*, *Faltou* e *Cancelar*.
 - **Fila e urgências**: pacientes que pediram atendente ou dispararam a triagem sobem para o topo, com selo vermelho.
 - **Conversas**: histórico em bolhas, ficha do paciente (nascimento, convênio, próxima consulta, status da confirmação), envio manual pela recepção e botão para devolver a conversa ao bot.
 - **Simulador**: testa o atendimento inteiro sem conectar o WhatsApp — inclusive o caminho da urgência.
 - **Lembretes**: fila do que vai sair, com *enviar agora* e *cancelar*.
-- **Números** (abaixo): taxa de falta dos últimos 30 dias, geral e por profissional, e o comparativo
+- **Números**: taxa de falta dos últimos 30 dias, geral e por profissional, e o comparativo
   **confirmou × não confirmou** — que mostra em pontos percentuais quanto o lembrete de véspera
   está segurando de falta. Consultas que passaram sem ninguém marcar presença aparecem à parte e
   ficam fora da conta, em vez de virar "compareceu" por omissão.
