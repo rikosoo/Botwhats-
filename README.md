@@ -53,6 +53,23 @@ O conteúdo da mídia **não é baixado nem armazenado** — áudio e imagem de 
 dado clínico, e o consultório não precisa de cópia disso no servidor. Fica registrado só o tipo, e
 a recepção abre a mensagem no WhatsApp.
 
+## Editar o que o bot fala
+
+Aba **Mensagens** do painel: onze textos podem ser reescritos sem tocar no código — saudação, aviso
+de privacidade, confirmação do agendamento, lembrete da véspera, lembretes de 7 e 3 dias, os três
+follow-ups, check-in do dia seguinte, agenda sem horário e transferência para a recepção.
+
+As variáveis entre chaves (`{primeiro_nome}`, `{data}`, `{hora}`, `{medico}`, `{consultorio}`…) são
+preenchidas na hora do envio, e cada campo mostra quais aceita — clique para inserir. **Campo vazio
+usa o texto padrão**, então apagar é sempre o caminho de volta.
+
+Um teste garante que todo campo oferecido no painel realmente chega ao paciente: se alguém acrescentar
+um campo sem ligá-lo à mensagem, a suíte falha em vez de o consultório descobrir depois.
+
+![editor de mensagens](docs/mensagens.png)
+
+Os textos que não estão nessa lista (e o tom geral) continuam em `src/core/messages.js`.
+
 ## Privacidade dos pacientes (LGPD)
 
 O consultório é o controlador desses dados, então exportar e apagar precisam ser um botão — não uma
@@ -87,8 +104,9 @@ Na aba **Ajustes** do painel dá para:
   são situações diferentes e o paciente merece a resposta certa;
 - **adicionar e remover** planos do cadastro.
 
-O cadastro fica em `clinic.insurances` (`[{ name, active }]`) com `clinic.acceptsInsurance` como
-chave geral. Bancos antigos, que guardavam só os nomes, são convertidos ao carregar.
+Fica em **Ajustes → Convênios** (role a aba até o fim dos dados do consultório). O cadastro é
+`clinic.insurances` (`[{ name, active }]`) com `clinic.acceptsInsurance` como chave geral; bancos
+antigos, que guardavam só os nomes, são convertidos ao carregar.
 
 ![cadastro de convênios](docs/convenios.png)
 
@@ -365,11 +383,12 @@ src/
   core/waitlist.js    fila de espera e oferta automática de vaga
   core/auth.js        login, sessões e troca de senha
   core/privacy.js     exportar, apagar e reter dados de paciente
+  core/templates.js   mensagens editáveis pelo painel
   core/reminders.js   follow-up, pré-consulta, retorno e falta
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 98 testes com node:test
+test/                 105 testes com node:test
 ```
 
 ## Testes

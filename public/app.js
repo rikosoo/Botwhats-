@@ -158,6 +158,7 @@ function render() {
   renderDisparo();
   renderNumeros();
   renderActivity();
+  renderMensagens();
   renderConfig();
 }
 
@@ -1028,6 +1029,85 @@ function renderActivity() {
     ul.append(li);
   }
   panel.append(ul);
+}
+
+/**
+ * Aba Mensagens: reescrever o que o bot fala, sem mexer no código.
+ * Campo vazio volta ao texto padrão — é o caminho de volta sempre disponível.
+ */
+function renderMensagens() {
+  const panel = $('#tab-mensagens');
+  if (!panel) return;
+
+  const foco = document.activeElement;
+  const digitando = foco && panel.contains(foco) && foco.tagName === 'TEXTAREA';
+  if (panel.childElementCount && digitando) return;
+
+  const campos = state.data.messageFields || [];
+  const guardadas = state.data.clinic.messages || {};
+  const assinatura = JSON.stringify(guardadas);
+  if (!state.mensagens || state.mensagens.assinatura !== assinatura) {
+    state.mensagens = { assinatura, valores: { ...guardadas } };
+  }
+
+  panel.innerHTML = '';
+  panel.append(el('div', 'desc',
+    'Deixe em branco para usar o texto padrão. As variáveis entre chaves são preenchidas '
+    + 'na hora do envio — clique para inserir.'));
+
+  const salvar = async () => {
+    await api('/api/clinic', { method: 'PUT', body: { messages: state.mensagens.valores } });
+    state.mensagens = null;
+    toast('Mensagens atualizadas');
+    await carregar();
+  };
+
+  for (const campo of campos) {
+    const bloco = el('div', 'msg-block');
+    const cabecalho = el('div', 'row');
+    cabecalho.append(el('span', 'title', campo.titulo));
+    const marca = el('span', 'badge', state.mensagens.valores[campo.id] ? 'personalizada' : 'padrão');
+    cabecalho.append(marca);
+    bloco.append(cabecalho);
+    bloco.append(el('div', 'desc', campo.descricao));
+
+    const area = el('textarea');
+    area.rows = 4;
+    area.placeholder = 'Usando o texto padrão do sistema…';
+    area.value = state.mensagens.valores[campo.id] || '';
+    area.addEventListener('input', () => {
+      state.mensagens.valores[campo.id] = area.value;
+      marca.textContent = area.value.trim() ? 'personalizada' : 'padrão';
+    });
+    bloco.append(area);
+
+    const vars = el('div', 'vars');
+    for (const variavel of campo.variaveis) {
+      const btn = el('button', null, variavel);
+      btn.addEventListener('click', () => {
+        const pos = area.selectionStart || area.value.length;
+        area.value = area.value.slice(0, pos) + variavel + area.value.slice(pos);
+        state.mensagens.valores[campo.id] = area.value;
+        marca.textContent = 'personalizada';
+        area.focus();
+        area.setSelectionRange(pos + variavel.length, pos + variavel.length);
+      });
+      vars.append(btn);
+    }
+    const restaurar = el('button', 'ghost', '↩ Voltar ao padrão');
+    restaurar.addEventListener('click', () => {
+      area.value = '';
+      state.mensagens.valores[campo.id] = '';
+      marca.textContent = 'padrão';
+    });
+    vars.append(restaurar);
+    bloco.append(vars);
+    panel.append(bloco);
+  }
+
+  const botao = el('button', null, 'Salvar mensagens');
+  botao.addEventListener('click', () => salvar().catch((err) => toast(err.message)));
+  panel.append(botao);
 }
 
 const DIAS = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];

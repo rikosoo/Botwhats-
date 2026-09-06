@@ -99,6 +99,9 @@ const CLINICA_PADRAO = {
     },
   ],
 
+  // Textos reescritos pelo painel (vazio = usa o padrao de core/messages.js).
+  messages: {},
+
   policies: {
     arriveMinutes: 15,
     cancelHours: 24,

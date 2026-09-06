@@ -2,6 +2,7 @@
 
 const { formatDateBr, formatDateLong, formatDateFriendly } = require('./agenda');
 const { conveniosAtivos, opcoesDePagamento } = require('../clinic');
+const { personalizado } = require('./templates');
 
 /**
  * Todo o texto que o paciente lê está aqui — em um lugar só, para o
@@ -25,6 +26,25 @@ function periodo(hora) {
 
 const primeiroNome = (contato) => (contato && contato.name ? contato.name.trim().split(/\s+/)[0] : null);
 
+/** Variáveis disponíveis para os textos editados no painel. */
+function contexto(clinic, contato, extras = {}) {
+  return {
+    consultorio: clinic.name,
+    assistente: clinic.assistantName,
+    especialidade: clinic.specialty,
+    telefone: clinic.phone,
+    endereco: clinic.address,
+    referencia: clinic.addressHint || '',
+    horario_funcionamento: clinic.hoursText,
+    documentos: clinic.documents.join(', '),
+    antecedencia: clinic.policies.arriveMinutes,
+    horas_cancelamento: clinic.policies.cancelHours,
+    nome: contato && contato.name ? contato.name : '',
+    primeiro_nome: primeiroNome(contato) || '',
+    ...extras,
+  };
+}
+
 function lista(itens, formatador) {
   return itens.map((item, i) => `${i + 1}. ${formatador(item, i)}`).join('\n');
 }
@@ -34,6 +54,9 @@ const M = {
   primeiroNome,
 
   saudacao(clinic, contato, hora, aberto, seed = 0) {
+    const proprio = personalizado(clinic, 'saudacao', contexto(clinic, contato, { saudacao: periodo(hora) }));
+    if (proprio) return proprio;
+
     const nome = primeiroNome(contato);
     const abertura = nome
       ? `${periodo(hora)}, ${nome}!`
@@ -50,7 +73,8 @@ const M = {
   },
 
   avisoPrivacidade(clinic) {
-    return `🔒 ${clinic.policies.privacyNotice}`;
+    return personalizado(clinic, 'privacidade', contexto(clinic, null))
+      || `🔒 ${clinic.policies.privacyNotice}`;
   },
 
   naoEntendi(clinic, seed = 0) {
@@ -174,7 +198,9 @@ const M = {
       + 'Qual horário prefere? (pode escrever "10h", por exemplo)';
   },
 
-  semHorarios(clinic) {
+  semHorarios(clinic, contato = null) {
+    const proprio = personalizado(clinic, 'semHorarios', contexto(clinic, contato));
+    if (proprio) return proprio;
     return 'No momento não encontrei horários livres nos próximos dias. 😕\n\n'
       + 'Posso te colocar na *lista de espera*: assim que alguém desmarcar, eu te aviso na hora '
       + '— normalmente aparece vaga toda semana. Quer que eu anote seu nome?';
@@ -238,6 +264,15 @@ const M = {
   },
 
   agendamentoConfirmado(clinic, contato, booking, service) {
+    const proprio = personalizado(clinic, 'agendamentoConfirmado', contexto(clinic, contato, {
+      data: formatDateLong(booking.date),
+      hora: booking.start,
+      medico: booking.professionalName,
+      atendimento: booking.serviceName,
+      preparo: service && service.prep ? service.prep : '',
+    }));
+    if (proprio) return proprio;
+
     const chegue = clinic.policies.arriveMinutes;
     const partes = [
       `Prontinho, ${primeiroNome(contato)}! Sua consulta está reservada. ✅`,
@@ -355,7 +390,9 @@ const M = {
     return `${linhas.join('\n\n')}\n\nQualquer dúvida sobre o preparo, a secretária confirma com você.`;
   },
 
-  atendente(clinic, aberto) {
+  atendente(clinic, aberto, contato = null) {
+    const proprio = personalizado(clinic, 'atendente', contexto(clinic, contato));
+    if (proprio) return proprio;
     return aberto
       ? `Claro! Já chamei a secretária do ${clinic.name} — ela assume a conversa em instantes. 🙂\n\n`
         + 'Se quiser voltar a falar comigo, é só escrever "menu".'
@@ -376,6 +413,9 @@ const M = {
   // ---------- lembretes ----------
 
   lembreteFollowUp(clinic, contato, dias, agendaCheia = false) {
+    const proprio = personalizado(clinic, `followup${dias}`, contexto(clinic, contato));
+    if (proprio) return proprio;
+
     const nome = primeiroNome(contato) || 'tudo bem';
 
     // Só falamos em agenda enchendo quando ela está enchendo de verdade.
@@ -403,6 +443,17 @@ const M = {
    * tempo de encaixar outra pessoa.
    */
   lembreteConsulta(clinic, contato, booking, dias, service) {
+    if (dias === 1) {
+      const proprio = personalizado(clinic, 'lembreteVespera', contexto(clinic, contato, {
+        data: formatDateLong(booking.date),
+        hora: booking.start,
+        medico: booking.professionalName,
+        duracao: service ? service.durationMin : '',
+        preparo: service && service.prep ? service.prep : '',
+      }));
+      if (proprio) return proprio;
+    }
+
     const nome = primeiroNome(contato) || 'tudo bem';
     const duracao = service ? service.durationMin : null;
     const reserva = duracao
@@ -437,6 +488,14 @@ const M = {
    * uma confirmação que ele já deu.
    */
   lembreteEspera(clinic, contato, booking, service) {
+    const proprio = personalizado(clinic, 'lembreteAntes', contexto(clinic, contato, {
+      data: formatDateLong(booking.date),
+      hora: booking.start,
+      medico: booking.professionalName,
+      preparo: service && service.prep ? service.prep : '',
+    }));
+    if (proprio) return proprio;
+
     const nome = primeiroNome(contato) || 'tudo bem';
     const quando = `${formatDateLong(booking.date)} às ${booking.start}`;
     const partes = [
@@ -455,6 +514,9 @@ const M = {
    * ficou dúvida nas orientações — e o que vier cai na fila da recepção.
    */
   checkInPosConsulta(clinic, contato) {
+    const proprio = personalizado(clinic, 'posConsulta', contexto(clinic, contato));
+    if (proprio) return proprio;
+
     const nome = primeiroNome(contato) || 'tudo bem';
     return `Oi, ${nome}! Passando para saber como você está depois da consulta de ontem. 💛\n\n`
       + 'Ficou alguma dúvida sobre as orientações, ou tem algo em que a gente possa ajudar? '

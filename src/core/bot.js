@@ -296,7 +296,7 @@ class Bot {
     // A recepção assume: o bot não fica cobrando por cima do atendimento humano.
     this.store.cancelReminders((r) => r.contactId === contato.id && r.kind === 'followup');
     this.store.logEvent('handoff', `${contato.name || contato.phone} aguarda atendimento humano`);
-    return [M.atendente(this.clinic, this.agenda.isOpenNow())];
+    return [M.atendente(this.clinic, this.agenda.isOpenNow(), contato)];
   }
 
   minhasConsultas(contato) {
@@ -364,7 +364,7 @@ class Bot {
   // ---------- lista de espera ----------
 
   entrarNaEspera(contato) {
-    if (!this.waitlist) return [M.semHorarios(this.clinic)];
+    if (!this.waitlist) return [M.semHorarios(this.clinic, contato)];
     const jaEstava = this.waitlist.entradasDe(contato.id)[0];
     if (jaEstava) {
       contato.state = { step: 'conversa', data: {} };
@@ -652,7 +652,7 @@ class Bot {
         data: { serviceId: contato.state.data.serviceId, professionalId: contato.state.data.professionalId },
       };
       this.store.logEvent('agenda', `Sem horários para ${contato.name || contato.phone}`);
-      return [M.semHorarios(this.clinic)];
+      return [M.semHorarios(this.clinic, contato)];
     }
     contato.state.data.professionalId = professionalId;
     contato.state.step = 'agendar_dia';

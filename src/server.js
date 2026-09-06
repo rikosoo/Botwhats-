@@ -6,6 +6,7 @@ const express = require('express');
 const { SEGMENTOS, VARIAVEIS } = require('./core/broadcast');
 const { indicadores } = require('./core/metrics');
 const { exportarPaciente, apagarPaciente } = require('./core/privacy');
+const { CAMPOS: CAMPOS_DE_MENSAGEM, sanitizar: sanitizarMensagens } = require('./core/templates');
 const { normalizarConvenios, conveniosAtivos } = require('./clinic');
 
 function createServer(app) {
@@ -122,6 +123,7 @@ function createServer(app) {
         total: broadcast.segmentar(id).length,
       })),
       variables: Object.keys(VARIAVEIS),
+      messageFields: CAMPOS_DE_MENSAGEM,
       broadcastLimits: { delayMs: config.broadcastDelayMs, max: config.broadcastMaxRecipients },
       dayView: agenda.dayView(hoje),
       waitlist: store.state.waitlist
@@ -383,6 +385,9 @@ function createServer(app) {
   server.get('/api/clinic', (req, res) => res.json(store.clinic));
 
   server.put('/api/clinic', (req, res) => {
+    if (req.body && req.body.messages) {
+      req.body.messages = sanitizarMensagens(req.body.messages);
+    }
     if (req.body && req.body.insurances) {
       // Aceita ["Unimed"] ou [{ name, active }] e grava sempre no formato novo.
       req.body.insurances = normalizarConvenios(req.body.insurances);
@@ -390,7 +395,7 @@ function createServer(app) {
     const permitido = [
       'name', 'specialty', 'assistantName', 'address', 'addressHint', 'mapsUrl', 'phone',
       'hoursText', 'insurances', 'acceptsInsurance', 'privatePrice', 'paymentInfo',
-      'documents', 'services', 'policies',
+      'documents', 'services', 'policies', 'messages',
     ];
     for (const campo of permitido) {
       if (req.body && req.body[campo] !== undefined) store.clinic[campo] = req.body[campo];
