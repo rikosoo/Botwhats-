@@ -1583,6 +1583,7 @@ async function carregar() {
   }
   esconderLogin();
   $('#senhaPadraoAviso').hidden = !(state.data.user && state.data.user.mustChangePassword);
+  $('#botDesligadoAviso').hidden = state.data.clinic.botEnabled !== false;
   if (!state.selected && state.data.contacts.length) state.selected = state.data.contacts[0].id;
   render();
 }
@@ -1708,6 +1709,30 @@ function blocoWhatsApp(panel) {
 
   const desenhar = (dados) => {
     caixa.innerHTML = '';
+
+    // O interruptor vem primeiro: é o que a recepção mais mexe.
+    const chave = el('label', 'switch-row');
+    const marca = el('input');
+    marca.type = 'checkbox';
+    marca.checked = dados.botAtivo;
+    marca.addEventListener('change', async () => {
+      try {
+        await api('/api/bot', { method: 'POST', body: { enabled: marca.checked } });
+        toast(marca.checked
+          ? 'Atendimento automático ligado'
+          : 'Atendimento automático desligado — as mensagens vão para a recepção');
+        await carregar();
+      } catch (err) { toast(err.message); }
+    });
+    chave.append(marca, el('span', null, 'Atendimento automático (o bot responde sozinho)'));
+    caixa.append(chave);
+    if (!dados.botAtivo) {
+      caixa.append(el('div', 'desc',
+        'Desligado: as mensagens continuam chegando e aparecem aqui, mas ninguém responde '
+        + 'automaticamente. Os lembretes já programados continuam saindo.'));
+    }
+    caixa.append(el('hr'));
+
     if (dados.canal !== 'whatsapp') {
       caixa.append(el('div', 'title', 'Modo simulador'));
       caixa.append(el('div', 'desc',
@@ -1717,7 +1742,21 @@ function blocoWhatsApp(panel) {
     }
     if (dados.conectado) {
       caixa.append(el('div', 'title', '✅ WhatsApp conectado'));
-      caixa.append(el('div', 'desc', 'O bot está atendendo. Se o aparelho for desconectado, o QR Code reaparece aqui.'));
+      caixa.append(el('div', 'desc',
+        'Se o aparelho for desconectado algum dia, o QR Code reaparece aqui.'));
+      if (dados.podeDesconectar) {
+        const sair = el('button', 'ghost danger', 'Desconectar este número');
+        sair.title = 'Desvincula o aparelho e mostra um QR novo, para conectar outro número';
+        sair.addEventListener('click', async () => {
+          if (!confirm('Desconectar o número atual? O bot para de atender até você ler um novo QR Code.')) return;
+          try {
+            await api('/api/whatsapp/logout', { method: 'POST' });
+            toast('Desconectado — leia o novo QR Code para vincular um número');
+            setTimeout(consultar, 1500);
+          } catch (err) { toast(err.message); }
+        });
+        caixa.append(sair);
+      }
       return;
     }
 

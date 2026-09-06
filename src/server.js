@@ -362,6 +362,8 @@ function createServer(app) {
       canal: channel.name,
       status: channel.status,
       conectado: channel.status === 'conectado',
+      botAtivo: store.clinic.botEnabled !== false,
+      podeDesconectar: typeof channel.logout === 'function',
       qrSvg: null,
       qrTexto: channel.qr || null,
     };
@@ -377,6 +379,31 @@ function createServer(app) {
       }
     }
     return res.json(resposta);
+  });
+
+  /** Liga e desliga o atendimento automático sem mexer em mais nada. */
+  server.post('/api/bot', (req, res) => {
+    const ligado = !!(req.body || {}).enabled;
+    store.clinic.botEnabled = ligado;
+    store.commit('clinic', store.clinic);
+    store.logEvent('config', ligado
+      ? 'Atendimento automático ligado'
+      : 'Atendimento automático desligado — as mensagens vão direto para a recepção');
+    return res.json({ enabled: ligado });
+  });
+
+  /** Desvincula o número, para conectar outro aparelho. */
+  server.post('/api/whatsapp/logout', async (req, res) => {
+    if (typeof channel.logout !== 'function') {
+      return res.status(400).json({ error: 'este canal não tem número vinculado' });
+    }
+    try {
+      await channel.logout();
+      store.logEvent('config', 'WhatsApp desconectado pelo painel');
+      return res.json({ ok: true });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
   });
 
   // ---------- disparo de mensagens ----------
@@ -444,7 +471,7 @@ function createServer(app) {
     const permitido = [
       'name', 'specialty', 'assistantName', 'address', 'addressHint', 'mapsUrl', 'phone',
       'hoursText', 'insurances', 'acceptsInsurance', 'privatePrice', 'paymentInfo',
-      'documents', 'services', 'policies', 'messages', 'reminders',
+      'documents', 'services', 'policies', 'messages', 'reminders', 'botEnabled',
     ];
     for (const campo of permitido) {
       if (req.body && req.body[campo] !== undefined) store.clinic[campo] = req.body[campo];

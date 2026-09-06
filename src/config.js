@@ -45,6 +45,10 @@ const config = {
   // Marque como true quando o painel estiver atras de HTTPS.
   cookieSecure: process.env.COOKIE_SECURE === 'true',
 
+  // Certificado do painel. Com os dois preenchidos, o servidor sobe em HTTPS.
+  sslCert: process.env.SSL_CERT || path.join(__dirname, '..', 'certs', 'painel.crt'),
+  sslKey: process.env.SSL_KEY || path.join(__dirname, '..', 'certs', 'painel.key'),
+
   // Ocupacao (%) a partir da qual o bot pode dizer que a agenda esta enchendo.
   scarcityThreshold: Number(process.env.SCARCITY_THRESHOLD || 80),
 

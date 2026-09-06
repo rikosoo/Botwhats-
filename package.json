@@ -10,6 +10,8 @@
     "seed": "node scripts/seed.js",
     "demo": "node scripts/demo.js",
     "diagnostico": "node scripts/diagnostico.js",
+    "certificado": "node scripts/gerar-certificado.js",
+    "atualizar": "bash scripts/atualizar.sh",
     "test": "node --test test/*.test.js"
   },
   "engines": {

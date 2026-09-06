@@ -105,6 +105,10 @@ const CLINICA_PADRAO = {
   // Regras dos lembretes. null = usa o que estiver no .env.
   reminders: null,
 
+  // Atendimento automatico ligado. Desligado, o bot recebe e registra as
+  // mensagens, mas nao responde — a recepcao assume a conversa.
+  botEnabled: true,
+
   policies: {
     arriveMinutes: 15,
     cancelHours: 24,

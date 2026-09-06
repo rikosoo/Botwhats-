@@ -88,6 +88,37 @@ data, profissional, duração e se compareceu — nada que identifique alguém.
 Além disso, conversas com mais de `MESSAGE_RETENTION_DAYS` (padrão: 365) são apagadas
 automaticamente. Cadastro e histórico de consultas continuam.
 
+## Ligar e desligar o bot
+
+Em **Ajustes → Conexão do WhatsApp**, o interruptor **Atendimento automático**. Desligado, o bot
+para de responder mas continua registrando tudo: as mensagens aparecem no painel e o paciente entra
+na fila da recepção, com uma faixa fixa no topo para ninguém esquecer que está assim. Os lembretes
+já programados continuam saindo. No mesmo bloco fica **Desconectar este número**, que desvincula o
+aparelho e mostra um QR novo.
+
+## HTTPS
+
+Com `certs/painel.crt` e `certs/painel.key` presentes, o servidor sobe em HTTPS sozinho e o cookie
+de sessão passa a exigir conexão segura. Para gerar um certificado próprio:
+
+```bash
+npm run certificado 203.0.113.10   # o IP ou domínio pelo qual você acessa
+```
+
+O navegador avisa que o certificado é do próprio servidor (Avançado → Prosseguir) — o tráfego fica
+criptografado do mesmo jeito. Para um certificado sem aviso, veja as opções em
+[`docs/deploy-aws.md`](docs/deploy-aws.md).
+
+## Atualizar sem perder dados
+
+```bash
+npm run atualizar
+```
+
+Faz backup em `~/backups`, atualiza o código, reinstala dependências, reinicia o serviço e roda o
+diagnóstico. `data/db.json` e `.wwebjs_auth/` ficam fora do git, então a atualização não encosta nos
+pacientes nem derruba a sessão do WhatsApp.
+
 ## Colocar no ar
 
 Para rodar num servidor com acesso só seu, veja [`docs/deploy-aws.md`](docs/deploy-aws.md): EC2 com
@@ -355,7 +386,8 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `ADMIN_PASSWORD` | `Henrique123` | Senha inicial desse usuário |
 | `SESSION_DAYS` | `7` | Validade da sessão do painel |
 | `MAX_LOGIN_ATTEMPTS` | `8` | Tentativas antes de travar por 15 minutos |
-| `COOKIE_SECURE` | `false` | Ligue quando o painel estiver atrás de HTTPS |
+| `COOKIE_SECURE` | `false` | Ligue quando o painel estiver atrás de HTTPS (automático com certificado) |
+| `SSL_CERT` / `SSL_KEY` | `certs/painel.crt` / `.key` | Existindo os dois, o painel sobe em HTTPS |
 | `CHROMIUM_PATH` | — | Caminho do Chromium, se o Puppeteer não achar sozinho |
 
 ## API
@@ -367,7 +399,9 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `GET` | `/api/session` | Quem está logado |
 | `POST` | `/api/account/password` | Troca a senha (exige a atual) |
 | `POST` | `/api/account/username` | Troca o nome de usuário |
-| `GET` | `/api/whatsapp` | Estado da conexão e QR Code em SVG |
+| `GET` | `/api/whatsapp` | Estado da conexão, QR Code em SVG e se o bot está ligado |
+| `POST` | `/api/bot` | Liga/desliga o atendimento automático |
+| `POST` | `/api/whatsapp/logout` | Desvincula o número e volta a pedir QR |
 | `GET` | `/api/ping` | Sinal de vida, público |
 | `GET` | `/api/state` | Snapshot completo do painel |
 | `GET` | `/api/stream` | Server-Sent Events: atualização em tempo real |
@@ -422,7 +456,7 @@ src/
   channels/           simulador e WhatsApp real
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 121 testes com node:test
+test/                 123 testes com node:test
 ```
 
 ## Testes

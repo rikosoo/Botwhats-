@@ -42,6 +42,14 @@ class Bot {
       mediaType ? { mediaType } : {},
     );
 
+    // Desligado, o bot não responde nada — mas a mensagem entra no painel e o
+    // paciente vai para a fila, senão ninguém percebe que chegou.
+    if (this.clinic.botEnabled === false) {
+      contato.stage = 'atendimento humano';
+      this.store.commit('contact', contato);
+      return [];
+    }
+
     const respostas = mediaType
       ? this.tratarMidia(contato, mediaType)
       : await this.responder(contato, body, primeiraVez);

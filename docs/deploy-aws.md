@@ -272,6 +272,74 @@ O preço disso: a conexão é HTTP puro, sem criptografia. Sua senha do painel t
 seu computador e a AWS. Serve para configurar e testar; para o uso diário, volte ao túnel ou coloque
 o Tailscale (mais abaixo). E feche a porta 3000 quando terminar.
 
+## Deixar a conexão criptografada (certificado)
+
+Enquanto o painel roda em `http://`, senha e dados de paciente trafegam abertos. Três caminhos, do
+mais rápido ao mais bonito:
+
+### 1. Certificado próprio (2 minutos, funciona com IP)
+
+```bash
+cd ~/Botwhats-
+npm run certificado 18.219.126.21     # troque pelo IP da sua instância
+sudo systemctl restart botwhats
+```
+
+Agora acesse **`https://SEU_IP:3000`**. O navegador vai avisar que o certificado não é de uma
+autoridade conhecida — é esperado, porque quem assinou foi o próprio servidor. Em
+**Avançado → Prosseguir**, a conexão passa a ser criptografada do mesmo jeito. O aviso incomoda, mas
+o problema real (dados em texto puro na rede) fica resolvido.
+
+O certificado vale por 825 dias e fica em `certs/`, fora do git.
+
+### 2. Tailscale (5 minutos, sem aviso e sem porta aberta) — recomendado
+
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up
+sudo tailscale cert "$(tailscale status --json | grep -o '"DNSName":"[^"]*' | head -1 | cut -d'"' -f4 | sed 's/\.$//')"
+```
+
+Aponte `SSL_CERT` e `SSL_KEY` no `.env` para os arquivos gerados, reinicie, e acesse pelo nome
+`.ts.net` da máquina. Certificado de verdade, sem aviso, sem nada exposto na internet — e funciona
+do celular com o app do Tailscale.
+
+### 3. Domínio próprio com Caddy
+
+Se você tiver um domínio, o Caddy resolve o certificado sozinho. Vale quando mais gente da equipe
+precisar entrar; aí a porta 443 fica aberta e existe uma tela de login exposta ao mundo.
+
+Com HTTPS ligado, o cookie de sessão passa a exigir conexão segura automaticamente.
+
+## Atualizar sem perder nada
+
+```bash
+cd ~/Botwhats-
+npm run atualizar
+```
+
+O comando guarda uma cópia dos dados em `~/backups`, baixa a versão nova, instala dependências,
+reinstala o serviço e roda o diagnóstico no fim.
+
+**Os dados nunca são tocados pela atualização**: `data/db.json` (pacientes, consultas, usuários) e
+`.wwebjs_auth/` (a sessão do WhatsApp) estão fora do git — o `git pull` não encosta neles, e a
+sessão do WhatsApp continua conectada depois de atualizar.
+
+## Ligar e desligar o atendimento automático
+
+Em **Ajustes → Conexão do WhatsApp** há o interruptor **"Atendimento automático"**:
+
+- **Ligado**: o bot responde sozinho.
+- **Desligado**: as mensagens continuam chegando e aparecem no painel, mas ninguém responde
+  automaticamente — os pacientes vão para a fila da recepção. Uma faixa fica fixa no topo do painel
+  enquanto estiver assim, para ninguém esquecer que está desligado.
+
+Os lembretes já programados continuam saindo nos dois casos. Para parar também os lembretes, pare o
+serviço: `sudo systemctl stop botwhats`.
+
+No mesmo bloco fica **Desconectar este número**, para vincular outro aparelho — depois de
+desconectar, um QR novo aparece ali mesmo.
+
 ## Se algo der errado
 
 Antes de tudo, rode no servidor: `cd ~/Botwhats- && npm run diagnostico`. Ele confere Node, `.env`,
@@ -284,6 +352,8 @@ Chrome, pacotes, swap e sessão do WhatsApp, e diz o comando de cada pendência.
 | `Could not resolve hostname 18-219-126-21` | O IP foi digitado com **hífens**. É com pontos: `18.219.126.21` |
 | QR Code dá "inválido" no celular | O código expira em segundos. Leia o que está **no painel naquele instante** (ele se renova sozinho), nunca de um print ou de um log antigo |
 | QR sempre inválido, mesmo lendo na hora | O serviço pode estar reiniciando por memória. Veja `journalctl -u botwhats -n 50` e confirme o swap com `free -h` |
+| `https://` dá erro de certificado | Se você gerou o certificado próprio, é o aviso esperado: Avançado → Prosseguir |
+| Atualizei e sumiram os pacientes | Não é a atualização: `data/` fica fora do git. Confira `ls -la data/` e as cópias em `~/backups` |
 | `ssh` não conecta | Seu IP mudou. Atualize a regra do grupo de segurança para **Meu IP** |
 | O painel não abre no `localhost:3000` | O túnel caiu junto com o terminal do `ssh -L`. Reabra |
 | Serviço reiniciando sozinho | Memória. Confirme o swap (`free -h`) ou suba para `t3.small`/`t3.medium` |

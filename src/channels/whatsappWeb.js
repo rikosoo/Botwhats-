@@ -98,6 +98,23 @@ class WhatsAppWebChannel {
     return this.client.sendMessage(chatId, text);
   }
 
+  /**
+   * Desvincula o aparelho e volta a pedir QR Code — usado para trocar de numero.
+   * O logout apaga a sessao salva; sem reiniciar o cliente, nao viria QR novo.
+   */
+  async logout() {
+    if (!this.client) throw new Error('Canal do WhatsApp nao iniciado');
+    this.status = 'desconectando';
+    this.qr = null;
+    try {
+      await this.client.logout();
+    } catch {
+      await this.client.destroy();
+    }
+    this.status = 'aguardando leitura do QR Code';
+    await this.client.initialize();
+  }
+
   async stop() {
     if (this.client) await this.client.destroy();
     this.status = 'desconectado';

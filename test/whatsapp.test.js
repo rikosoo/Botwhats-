@@ -62,3 +62,47 @@ test('o estado da conexão exige login', async () => {
     await new Promise((r) => http.close(r));
   }
 });
+
+test('com o atendimento automático desligado, o bot não responde', async () => {
+  const { makeApp: criar } = require('./helpers');
+  const app = criar();
+  const phone = '5511900080001';
+
+  await app.conversa(phone, ['oi']);
+  assert.ok(app.sent.length > 0, 'ligado, ele responde');
+
+  app.store.clinic.botEnabled = false;
+  app.sent.length = 0;
+  await app.handleIncoming({ phone, body: 'quero marcar uma consulta' });
+
+  assert.strictEqual(app.sent.length, 0, 'desligado, silêncio');
+  const paciente = app.store.findContactByPhone(phone);
+  assert.strictEqual(paciente.stage, 'atendimento humano', 'mas entra na fila da recepção');
+  assert.strictEqual(
+    app.store.messagesOf(paciente.id).slice(-1)[0].body,
+    'quero marcar uma consulta',
+    'e a mensagem fica registrada',
+  );
+
+  // Religando, ele volta a atender o mesmo paciente.
+  app.store.clinic.botEnabled = true;
+  await app.handleIncoming({ phone, body: 'oi de novo' });
+  assert.ok(app.sent.length > 0);
+});
+
+test('o interruptor do bot é uma rota protegida', async () => {
+  const p = await painel();
+  try {
+    const desligar = await p.chamar('/api/bot', { method: 'POST', body: { enabled: false } });
+    assert.strictEqual(desligar.status, 200);
+    assert.strictEqual(p.app.store.clinic.botEnabled, false);
+
+    const estado = await p.chamar('/api/whatsapp');
+    assert.strictEqual(estado.corpo.botAtivo, false);
+
+    await p.chamar('/api/bot', { method: 'POST', body: { enabled: true } });
+    assert.strictEqual(p.app.store.clinic.botEnabled, true);
+  } finally {
+    await p.fechar();
+  }
+});

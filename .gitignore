@@ -4,3 +4,4 @@ data/*.json
 .wwebjs_cache/
 .env
 *.log
+certs/
