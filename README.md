@@ -431,6 +431,12 @@ test/                 121 testes com node:test
 npm test
 ```
 
+Para conferir a instalação num servidor (Node, `.env`, Chrome, pacotes, swap, sessão do WhatsApp):
+
+```bash
+npm run diagnostico
+```
+
 Cobrem a triagem de urgência, o entendimento de linguagem natural, a grade de horários por
 profissional e duração, as quatro famílias de lembrete, a conversa inteira de agendamento,
 remarcação, cancelamento e handoff, e o disparo — segmentação, variáveis, exclusão de opt-out

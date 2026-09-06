@@ -256,10 +256,34 @@ de segurança — quem chega pelo Tailscale não passa por ele. Instale o app no
 e `COOKIE_SECURE=true` no `.env`. É mais trabalho e passa a existir uma tela de login exposta ao
 mundo — só faz sentido quando mais gente da equipe precisar entrar.
 
+## Abrir o painel sem túnel (quando o SSH complica)
+
+O túnel é o mais seguro, mas depende de rodar `ssh` no seu computador. Se estiver difícil —
+por exemplo, você está entrando pelo **EC2 Instance Connect**, aquele terminal dentro do navegador —
+dá para liberar a porta do painel **só para o seu IP**:
+
+1. No `.env` do servidor, troque `HOST=127.0.0.1` por `HOST=0.0.0.0` e reinicie:
+   `sudo systemctl restart botwhats`
+2. **EC2 → Grupos de segurança → Editar regras de entrada → Adicionar regra**:
+   TCP personalizado · porta **3000** · origem **Meu IP**
+3. Abra `http://SEU_IP:3000` — **http, não https**, e com os pontos do IP.
+
+O preço disso: a conexão é HTTP puro, sem criptografia. Sua senha do painel trafega em texto entre o
+seu computador e a AWS. Serve para configurar e testar; para o uso diário, volte ao túnel ou coloque
+o Tailscale (mais abaixo). E feche a porta 3000 quando terminar.
+
 ## Se algo der errado
+
+Antes de tudo, rode no servidor: `cd ~/Botwhats- && npm run diagnostico`. Ele confere Node, `.env`,
+Chrome, pacotes, swap e sessão do WhatsApp, e diz o comando de cada pendência.
 
 | Sintoma | Provável causa |
 | --- | --- |
+| Abri `SEU_IP` no navegador e não carrega (`ERR_TIMED_OUT`) | **É o esperado.** Com `HOST=127.0.0.1` e a porta fechada, o painel não responde pela internet. Use o túnel e abra `http://localhost:3000`, ou siga "Abrir o painel sem túnel" acima |
+| `https://SEU_IP` não abre | Não existe HTTPS aqui. É `http://`, e pelo túnel é `localhost` |
+| `Could not resolve hostname 18-219-126-21` | O IP foi digitado com **hífens**. É com pontos: `18.219.126.21` |
+| QR Code dá "inválido" no celular | O código expira em segundos. Leia o que está **no painel naquele instante** (ele se renova sozinho), nunca de um print ou de um log antigo |
+| QR sempre inválido, mesmo lendo na hora | O serviço pode estar reiniciando por memória. Veja `journalctl -u botwhats -n 50` e confirme o swap com `free -h` |
 | `ssh` não conecta | Seu IP mudou. Atualize a regra do grupo de segurança para **Meu IP** |
 | O painel não abre no `localhost:3000` | O túnel caiu junto com o terminal do `ssh -L`. Reabra |
 | Serviço reiniciando sozinho | Memória. Confirme o swap (`free -h`) ou suba para `t3.small`/`t3.medium` |

@@ -18,8 +18,11 @@ WorkingDirectory=/home/ubuntu/Botwhats-
 ExecStart=/usr/bin/node src/index.js
 Restart=always
 RestartSec=5
-# Chromium é o que mais consome; se estourar, o serviço reinicia sozinho.
-MemoryMax=1400M
+# O Chrome é quem consome memória. MemoryHigh segura antes de matar; MemoryMax
+# é o teto duro, para o servidor inteiro não travar. Um teto baixo demais
+# derruba o serviço no meio da leitura do QR e o código "fica inválido".
+MemoryHigh=1200M
+MemoryMax=1700M
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=botwhats
