@@ -94,11 +94,33 @@ Quando o número conecta, o WhatsApp entrega tudo o que chegou enquanto ele este
 inclusive conversas de semanas atrás. Responder isso de uma vez faria o paciente receber, do nada,
 uma resposta para uma mensagem antiga.
 
-Duas travas cuidam disso. Mensagem com mais de `IGNORE_OLDER_THAN_MINUTES` (padrão: 10 minutos) é
-**registrada no painel e mandada para a fila da recepção, sem resposta automática**. E nos primeiros
-`CONNECT_QUIET_SECONDS` (padrão: 30 s) depois de conectar, **nada é respondido** — é exatamente
-quando a fila acumulada chega, e parte dela tem horário recente, que passaria pelo filtro de tempo. Se a pessoa escrever de novo,
-aí sim o bot atende normalmente. Grupos e status também são ignorados.
+Três travas cuidam disso, nesta ordem:
+
+1. **Silêncio de 5 minutos depois de conectar** (`connectQuietMinutes`, editável em Ajustes →
+   Lembretes e regras). A fila não chega de uma vez: o WhatsApp entrega em levas, que podem levar
+   minutos — foi por isso que 30 segundos não bastaram. Nessa janela nada é respondido; tudo é
+   registrado e vai para a recepção. **Ela termina sozinha**, e o painel mostra quanto falta, com o
+   botão *"Já conferi a fila — responder agora"* para encerrar antes.
+2. **Mensagem escrita antes da conexão nunca recebe resposta automática**, por mais recente que
+   pareça. É a regra que fecha o buraco: uma mensagem de três minutos atrás, entregue depois da
+   janela, passava pelas duas checagens antigas. Há dois minutos de folga para o relógio atrasado do
+   aparelho de quem escreveu.
+3. **Mensagem com mais de `IGNORE_OLDER_THAN_MINUTES`** (padrão: 10 minutos) fica de fora, venha de
+   onde vier.
+
+Se a pessoa escrever de novo depois disso, aí sim o bot atende normalmente. Grupos e status também
+são ignorados.
+
+## Quando a recepção entra na conversa
+
+Responder a mão pelo painel **assume a conversa**: o bot para de responder naquele paciente (e só
+nele) até alguém clicar em **↩ Devolver ao bot**. Sem isso o paciente recebia a resposta da
+secretária e, logo em seguida, a do robô por cima — o que desfaz o atendimento.
+
+Uma faixa na ficha do paciente mostra que a conversa está assumida, com o botão para devolver. Isso
+é diferente do encaminhamento que o próprio bot faz (urgência, áudio, pedido de atendente): dali o
+paciente ainda volta sozinho escrevendo **menu**. Quem preferir o robô sempre respondendo pode
+desligar a pausa em Ajustes → Lembretes e regras.
 
 ## Quando o WhatsApp não está conectado
 
@@ -440,7 +462,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `PORT` | `3000` | Porta do painel |
 | `HOST` | `0.0.0.0` | Endereço de escuta; use `127.0.0.1` em servidor exposto |
 | `TZ` | `America/Sao_Paulo` | Fuso da agenda e dos lembretes |
-| `CONNECT_QUIET_SECONDS` | `30` | Silêncio logo após conectar, enquanto a fila acumulada chega |
+| `CONNECT_QUIET_SECONDS` | `300` | Silêncio logo após conectar (padrão de partida; o painel manda) |
 | `IGNORE_OLDER_THAN_MINUTES` | `10` | Mensagem mais antiga que isso não recebe resposta automática |
 | `TYPING_DELAY_MS` | `1200` | Pausa entre mensagens no canal real (0 desliga) |
 | `SCHEDULER_INTERVAL_MS` | `30000` | Frequência com que os lembretes vencidos são enviados |
@@ -499,6 +521,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `POST` | `/api/professionals/:id/bloqueio` | Bloqueia o dia (`{date}`) ou uma faixa (`{date, start, end}`) |
 | `DELETE` | `/api/professionals/:id/bloqueio/:date` | Cancela o bloqueio daquele dia |
 | `POST` | `/api/contacts/:id/read` | Marca a conversa como lida |
+| `POST` | `/api/whatsapp/silencio` | Encerra o silêncio pós-conexão antes da hora |
 | `POST`/`PUT`/`DELETE` | `/api/services[/:id]` | Tipos de atendimento |
 | `GET` | `/api/slots-dias?professionalId=&serviceId=` | Dias com horário livre para a combinação |
 | `GET` | `/api/semana?inicio=AAAA-MM-DD` | Sete dias com consultas, livres e dias fechados |
@@ -534,7 +557,7 @@ src/
   integrations/       Google Agenda (OAuth e eventos)
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 156 testes com node:test
+test/                 166 testes com node:test
 ```
 
 ## Testes

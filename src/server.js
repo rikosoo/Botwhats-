@@ -192,6 +192,16 @@ function createServer(app) {
     if (!body) return res.status(400).json({ error: 'informe body' });
     try {
       await app.sendText(contact.phone, String(body));
+      // Quem responde a mão assume a conversa: o bot para de responder nela até
+      // alguém clicar em "Devolver ao bot". Duas respostas para a mesma
+      // pergunta — a da secretária e a do robô — é pior do que só uma.
+      if (!contact.recepcaoAssumiu) {
+        contact.recepcaoAssumiu = new Date().toISOString();
+        contact.stage = 'atendimento humano';
+        store.logEvent('handoff',
+          `${contact.name || contact.phone}: recepção assumiu a conversa — bot pausado aqui`);
+        store.commit('contact', contact);
+      }
       return res.json({ ok: true });
     } catch (err) {
       return res.status(409).json({ error: err.message, entregue: false });
@@ -243,6 +253,7 @@ function createServer(app) {
     if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
     contact.state = { step: 'conversa', data: {} };
     contact.stage = contact.stage === 'atendimento humano' ? 'ativo' : contact.stage;
+    delete contact.recepcaoAssumiu;
     store.logEvent('handoff', `${contact.name || contact.phone} devolvido ao atendimento automático`);
     store.commit('contact', contact);
     return res.json(contact);
@@ -470,6 +481,10 @@ function createServer(app) {
       conectado: channel.status === 'conectado',
       botAtivo: store.clinic.botEnabled !== false,
       podeDesconectar: typeof channel.logout === 'function',
+      // Silêncio pós-conexão: a recepção precisa ver que ele existe, quanto
+      // falta e que dá para encerrar — senão parece que o bot ficou mudo.
+      silencioRestante: typeof channel.silencioRestante === 'function' ? channel.silencioRestante() : 0,
+      silencioMinutos: Math.round((Number(config.connectQuietSeconds) || 0) / 60),
       qrSvg: null,
       qrTexto: channel.qr || null,
     };
@@ -485,6 +500,19 @@ function createServer(app) {
       }
     }
     return res.json(resposta);
+  });
+
+  /**
+   * Encerra o silêncio pós-conexão antes da hora. A recepção olhou a fila que
+   * acabou de chegar e quer o bot respondendo já.
+   */
+  server.post('/api/whatsapp/silencio', (req, res) => {
+    if (typeof channel.encerrarSilencio !== 'function') {
+      return res.status(400).json({ error: 'este canal não tem silêncio pós-conexão' });
+    }
+    channel.encerrarSilencio();
+    store.logEvent('config', 'Silêncio pós-conexão encerrado pela recepção');
+    return res.json({ silencioRestante: 0 });
   });
 
   /** Liga e desliga o atendimento automático sem mexer em mais nada. */
@@ -578,6 +606,7 @@ function createServer(app) {
       'name', 'specialty', 'assistantName', 'address', 'addressHint', 'mapsUrl', 'phone',
       'hoursText', 'insurances', 'acceptsInsurance', 'privatePrice', 'paymentInfo',
       'documents', 'services', 'policies', 'messages', 'reminders', 'botEnabled',
+      'pausarQuandoRecepcaoResponde', 'connectQuietMinutes',
     ];
     for (const campo of permitido) {
       if (req.body && req.body[campo] !== undefined) store.clinic[campo] = req.body[campo];

@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const { makeApp } = require('./helpers');
 const { DAY_MS } = require('../src/core/reminders');
+const { addDaysToKey } = require('../src/core/agenda');
 
 function marcarConsulta(app, phone, nome, emDias) {
   const paciente = app.store.upsertContact(phone, nome);
@@ -229,16 +230,24 @@ test('agenda cheia de verdade muda o texto do follow-up', async () => {
   for (const p of app.store.clinic.professionals) {
     p.weekly = { 0: [], 1: [{ start: '09:00', end: '10:00' }], 2: [], 3: [], 4: [], 5: [], 6: [] };
   }
+  // Ocupa a mesma janela que a conta de ocupação enxerga: sete dias a partir de
+  // hoje, incluindo o que já passou hoje. Preencher só os horários futuros
+  // fazia o teste passar de manhã e falhar à tarde, quando as vagas da manhã
+  // já saíram da lista mas continuam contando na ocupação do dia.
   const ocupante = app.store.upsertContact('5511933333351', 'Ocupante');
-  for (const profissional of app.store.clinic.professionals) {
-    const dias = app.agenda.nextAvailableDays(7, { professionalId: profissional.id, serviceId: 'retorno' });
-    for (const dia of dias) {
-      for (const slot of dia.slots) {
+  let data = app.agenda.today();
+  for (let i = 0; i < 7; i += 1) {
+    for (const profissional of app.store.clinic.professionals) {
+      const slots = app.agenda.slotsFor(data, {
+        professionalId: profissional.id, serviceId: 'retorno', includePast: true,
+      });
+      for (const slot of slots) {
         app.agenda.book(ocupante.id, {
-          professionalId: profissional.id, serviceId: 'retorno', date: dia.date, start: slot.start,
+          professionalId: profissional.id, serviceId: 'retorno', date: data, start: slot.start,
         });
       }
     }
+    data = addDaysToKey(data, 1);
   }
   assert.ok(app.agenda.ocupacao(7).percentual >= 80, 'a agenda está realmente cheia');
 

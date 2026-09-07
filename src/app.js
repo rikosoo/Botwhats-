@@ -59,6 +59,16 @@ function createApp(config, { channel } = {}) {
   const retencao = new Retencao(store, config);
   bot.waitlist = waitlist;
 
+  // Quanto tempo o bot fica calado depois de conectar é decisão da recepção, e
+  // ela muda isso pelo painel — não por SSH no .env do servidor.
+  if (typeof chan.definirJanelaDeSilencio === 'function') {
+    chan.definirJanelaDeSilencio(() => {
+      const minutos = Number(store.clinic.connectQuietMinutes);
+      if (Number.isFinite(minutos) && minutos >= 0) return minutos * 60000;
+      return (Number(config.connectQuietSeconds) || 300) * 1000;
+    });
+  }
+
   // Google Agenda: a consulta marcada aqui aparece no calendário do médico, e
   // o compromisso que ele marcou no celular deixa de ser oferecido ao paciente.
   const google = new GoogleCalendar(store, config);

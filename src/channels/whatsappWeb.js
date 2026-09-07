@@ -13,6 +13,14 @@ const path = require('path');
  * O conteudo em si nao e baixado: audio e imagem de paciente podem carregar
  * dado clinico, e o consultorio nao precisa de copia disso no servidor.
  */
+/*
+ * O horario de uma mensagem vem do aparelho de quem escreveu. Relogio de
+ * celular atrasa alguns minutos sem ninguem notar, e uma mensagem nova pareceria
+ * anterior a conexao — e ficaria sem resposta. Dois minutos de folga cobrem o
+ * desvio comum sem deixar a fila acumulada passar.
+ */
+const TOLERANCIA_DE_RELOGIO_MS = 2 * 60000;
+
 const TIPOS_DE_MIDIA = {
   ptt: 'audio',
   audio: 'audio',
@@ -58,6 +66,68 @@ class WhatsAppWebChannel {
     this.client = null;
     this.pronto = false;
     this.conectadoEm = null;
+    // Fim da janela de silencio pos-conexao (ms). Fica no objeto para o painel
+    // poder mostrar quanto falta e para a recepcao poder encerrar antes.
+    this.silencioAte = null;
+  }
+
+  /** O painel manda o valor atual; o .env fica como padrao de partida. */
+  definirJanelaDeSilencio(fn) {
+    this.janelaFn = fn;
+  }
+
+  janelaDeSilencioMs() {
+    if (this.janelaFn) {
+      const doPainel = Number(this.janelaFn());
+      if (Number.isFinite(doPainel) && doPainel >= 0) return doPainel;
+    }
+    const segundos = Number(this.config.connectQuietSeconds);
+    return (Number.isFinite(segundos) && segundos >= 0 ? segundos : 300) * 1000;
+  }
+
+  /** Ainda estamos no silencio que se segue a conexao? */
+  emSilencio(agora = Date.now()) {
+    return this.silencioAte !== null && agora < this.silencioAte;
+  }
+
+  /** Quanto falta do silencio, em segundos (0 quando acabou). */
+  silencioRestante(agora = Date.now()) {
+    if (!this.emSilencio(agora)) return 0;
+    return Math.ceil((this.silencioAte - agora) / 1000);
+  }
+
+  /** A recepcao conferiu a fila e quer o bot respondendo ja. */
+  encerrarSilencio() {
+    this.silencioAte = null;
+  }
+
+  /**
+   * Esta mensagem merece resposta automatica?
+   *
+   * Ao conectar, o WhatsApp entrega tudo o que chegou enquanto o numero esteve
+   * offline — e nao entrega de uma vez, entrega em levas que podem levar
+   * minutos. Sem estas travas, ligar o aparelho vira uma rajada de respostas
+   * para conversas de dias atras. O que e barrado aqui continua registrado no
+   * painel e vai para a fila da recepcao; so a resposta automatica e que nao
+   * sai.
+   */
+  classificar(quando, agora = Date.now()) {
+    // 1. A leva ainda esta chegando. Nada e respondido nesta janela.
+    if (this.emSilencio(agora)) {
+      return { antiga: true, motivo: 'silencio pos-conexao' };
+    }
+    // 2. Escrita antes de o numero conectar: e fila, por mais recente que
+    //    pareca. A folga cobre o relogio atrasado do aparelho de quem enviou.
+    if (quando > 0 && this.conectadoEm !== null
+        && quando < this.conectadoEm - TOLERANCIA_DE_RELOGIO_MS) {
+      return { antiga: true, motivo: 'anterior a conexao' };
+    }
+    // 3. Rede de seguranca: mensagem velha demais, venha de onde vier.
+    const limite = (this.config.ignoreOlderThanMinutes || 10) * 60000;
+    if (quando > 0 && agora - quando > limite) {
+      return { antiga: true, motivo: 'mensagem antiga' };
+    }
+    return { antiga: false, motivo: null };
   }
 
   async start() {
@@ -114,12 +184,15 @@ class WhatsAppWebChannel {
       this.qr = null;
       this.pronto = true;
       this.conectadoEm = Date.now();
+      this.silencioAte = this.conectadoEm + this.janelaDeSilencioMs();
       this.status = 'conectado';
-      console.log('[whatsapp] conectado');
+      const minutos = Math.round(this.janelaDeSilencioMs() / 60000);
+      console.log(`[whatsapp] conectado — sem resposta automatica nos proximos ${minutos} min`);
     });
 
     this.client.on('disconnected', (reason) => {
       this.pronto = false;
+      this.silencioAte = null;
       this.status = `desconectado (${reason})`;
     });
 
@@ -142,21 +215,8 @@ class WhatsAppWebChannel {
        * Mensagem velha e registrada no painel e mandada para a fila da
        * recepcao, mas nao recebe resposta automatica.
        */
-      const quando = Number(msg.timestamp || 0) * 1000;
-      const limite = (this.config.ignoreOlderThanMinutes || 10) * 60000;
-      const velha = quando > 0 && Date.now() - quando > limite;
-
-      /*
-       * A fila acumulada chega nos primeiros segundos depois de conectar, e
-       * parte dela tem horario recente — passaria pelo filtro acima. Por isso
-       * a janela de silencio logo apos a conexao: nada e respondido, tudo e
-       * registrado. Sem isso, reconectar o aparelho vira uma rajada de
-       * respostas para quem escreveu enquanto o numero esteve fora.
-       */
-      const silencio = (this.config.connectQuietSeconds || 30) * 1000;
-      const recemConectado = this.conectadoEm !== null && Date.now() - this.conectadoEm < silencio;
-
-      const antiga = velha || recemConectado;
+      const { antiga, motivo } = this.classificar(Number(msg.timestamp || 0) * 1000);
+      if (antiga) console.log(`[whatsapp] sem resposta automatica (${motivo}) para ${msg.from}`);
 
       // Audio, foto e documento nao podem cair no vazio: o paciente acha que
       // falou com o consultorio e ninguem respondeu.

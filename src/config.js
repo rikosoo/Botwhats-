@@ -32,9 +32,11 @@ const config = {
   chromiumPath: process.env.CHROMIUM_PATH || process.env.PUPPETEER_EXECUTABLE_PATH || null,
   dataFile: process.env.DATA_FILE || path.join(__dirname, '..', 'data', 'db.json'),
 
-  // Segundos de silencio logo depois de conectar: a fila acumulada chega nesse
-  // instante e nao deve ser respondida em rajada.
-  connectQuietSeconds: Number(process.env.CONNECT_QUIET_SECONDS || 30),
+  // Segundos de silencio logo depois de conectar. A fila acumulada nao chega
+  // de uma vez: o WhatsApp entrega em levas, que podem levar minutos. Cinco
+  // minutos cobrem a entrega inteira; a janela termina sozinha e a recepcao
+  // pode encerra-la antes pelo painel.
+  connectQuietSeconds: Number(process.env.CONNECT_QUIET_SECONDS || 300),
 
   // Mensagem que chegou ha mais tempo que isso (min) e registrada, mas nao
   // recebe resposta automatica — evita o bot responder a fila inteira ao

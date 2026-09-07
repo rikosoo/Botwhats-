@@ -109,6 +109,15 @@ const CLINICA_PADRAO = {
   // mensagens, mas nao responde — a recepcao assume a conversa.
   botEnabled: true,
 
+  // Quando a recepcao entra na conversa, o bot cala nessa conversa (e so
+  // nessa) ate alguem clicar em "Devolver ao bot". Sem isso, o paciente
+  // recebe a resposta da secretaria e, em seguida, a do robo por cima.
+  pausarQuandoRecepcaoResponde: true,
+
+  // Minutos sem resposta automatica logo depois de conectar o WhatsApp: e o
+  // tempo que a fila acumulada leva para ser entregue. Ajustavel pelo painel.
+  connectQuietMinutes: 5,
+
   policies: {
     arriveMinutes: 15,
     cancelHours: 24,

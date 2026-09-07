@@ -633,3 +633,13 @@ button.ghost.danger:hover { background: rgba(211, 47, 47, .1); color: var(--dang
   .composer button { flex: 0 0 auto; padding: 8px 12px; }
   .semana { grid-template-columns: repeat(7, minmax(112px, 1fr)); }
 }
+
+/* Faixa da conversa assumida pela recepção: o bot está calado ali, e isso
+   precisa estar à vista de quem abre a tela. */
+.assumida {
+  flex: 1 0 100%; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin-top: 6px; padding: 7px 10px; border-radius: 9px;
+  background: rgba(240, 180, 41, .14); border: 1px solid rgba(240, 180, 41, .45);
+  color: var(--text); font-size: 12.5px;
+}
+.assumida button { padding: 3px 9px; font-size: 12px; }

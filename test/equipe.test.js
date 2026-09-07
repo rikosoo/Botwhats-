@@ -28,6 +28,18 @@ async function painel(overrides) {
   return { app, chamar, fechar: () => new Promise((r) => http.close(r)) };
 }
 
+/**
+ * Minutos de um horário livre.
+ *
+ * Os testes olhavam o primeiro horário do dia pelo nome ("08:00"): passavam de
+ * manhã e falhavam à tarde, porque o que já passou sai da lista. O que a grade
+ * promete é a duração, e é isso que se verifica.
+ */
+function duracao(slot) {
+  const min = (t) => Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5));
+  return min(slot.end) - min(slot.start);
+}
+
 test('cadastrar, editar e remover um profissional', async () => {
   const p = await painel();
   try {
@@ -111,11 +123,13 @@ test('cadastrar e editar um tipo de atendimento', async () => {
     assert.deepStrictEqual(criado.corpo.includes, ['avaliação imediata', 'relatório para o convênio']);
     assert.strictEqual(criado.corpo.durationMin, 25);
 
-    // A duração nova passa a valer na grade de horários.
+    // A duração nova passa a valer na grade de horários. O primeiro horário
+    // livre depende da hora em que o teste roda — o que importa é que cada um
+    // dure os 25 minutos cadastrados, não que comece às 08:00.
     const dia = p.app.agenda.nextAvailableDays(1, {
       professionalId: 'dr-exemplo', serviceId: 'consulta-de-urgencia',
     })[0];
-    assert.strictEqual(dia.slots[0].end, '08:25');
+    for (const slot of dia.slots) assert.strictEqual(duracao(slot), 25);
 
     const editado = await p.chamar('/api/services/consulta-de-urgencia', {
       method: 'PUT', body: { durationMin: 45 },
@@ -181,10 +195,11 @@ test('horários livres respondem à combinação de médico e atendimento', asyn
     assert.ok(doDr.corpo.dias.length > 0);
     // A Dra. atende à tarde; o Dr. começa de manhã.
     assert.ok(daDra.corpo.dias[0].slots.every((s) => s.start >= '13:00'));
-    assert.strictEqual(doDr.corpo.dias[0].slots[0].start, '08:00');
-    // E a duração do atendimento muda o fim do horário.
-    assert.strictEqual(doDr.corpo.dias[0].slots[0].end, '08:40');
-    assert.strictEqual(daDra.corpo.dias[0].slots[0].end, '13:20');
+    assert.ok(doDr.corpo.dias.some((d) => d.slots.some((s) => s.start === '08:00')),
+      'a grade do Dr. começa às 08:00 em algum dos dias oferecidos');
+    // E a duração do atendimento muda o tamanho do horário.
+    assert.strictEqual(duracao(doDr.corpo.dias[0].slots[0]), 40);
+    assert.strictEqual(duracao(daDra.corpo.dias[0].slots[0]), 20);
   } finally {
     await p.fechar();
   }

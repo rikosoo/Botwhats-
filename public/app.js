@@ -419,6 +419,22 @@ function renderChat() {
     card.append(el('span', null, `📝 ${paciente.notes[paciente.notes.length - 1].text}`));
   }
 
+  // Conversa que a recepção assumiu: o bot está calado aqui, e quem abrir a
+  // tela precisa saber disso — senão vai achar que o robô parou de funcionar.
+  if (paciente.recepcaoAssumiu && state.data.clinic.pausarQuandoRecepcaoResponde !== false) {
+    const faixa = el('div', 'assumida');
+    faixa.append(el('span', null,
+      '🤝 A recepção assumiu esta conversa — o bot não responde aqui.'));
+    const devolver = el('button', 'ghost', '↩ Devolver ao bot');
+    devolver.addEventListener('click', async () => {
+      await api(`/api/contacts/${paciente.id}/release`, { method: 'POST' });
+      toast('Conversa devolvida ao atendimento automático');
+      await carregar();
+    });
+    faixa.append(devolver);
+    card.append(faixa);
+  }
+
   const canal = state.data.channel;
   const aviso = $('#avisoCanal');
   const desconectado = canal.name === 'whatsapp' && canal.status !== 'conectado';
@@ -2300,6 +2316,28 @@ function blocoWhatsApp(panel) {
       caixa.append(el('div', 'title', '✅ WhatsApp conectado'));
       caixa.append(el('div', 'desc',
         'Se o aparelho for desconectado algum dia, o QR Code reaparece aqui.'));
+
+      // Silêncio pós-conexão: sem mostrar isso, a recepção acha que o bot
+      // travou. Com a contagem à vista, ela sabe que é temporário — e pode
+      // encerrar depois de conferir a fila que acabou de chegar.
+      if (dados.silencioRestante > 0) {
+        const falta = dados.silencioRestante >= 60
+          ? `${Math.ceil(dados.silencioRestante / 60)} min`
+          : `${dados.silencioRestante}s`;
+        caixa.append(el('div', 'warn-note',
+          `🤫 Silêncio pós-conexão: nada é respondido automaticamente por mais ${falta}. `
+          + 'É o tempo em que o WhatsApp entrega a fila acumulada. As mensagens estão chegando ao '
+          + 'painel normalmente.'));
+        const liberar = el('button', 'ghost', 'Já conferi a fila — responder agora');
+        liberar.addEventListener('click', async () => {
+          try {
+            await api('/api/whatsapp/silencio', { method: 'POST' });
+            toast('Atendimento automático liberado');
+            consultar();
+          } catch (err) { toast(err.message); }
+        });
+        caixa.append(liberar);
+      }
       if (dados.podeDesconectar) {
         const sair = el('button', 'ghost danger', 'Desconectar este número');
         sair.title = 'Desvincula o aparelho e mostra um QR novo, para conectar outro número';
@@ -2342,6 +2380,8 @@ function blocoWhatsApp(panel) {
       const dados = await api('/api/whatsapp');
       desenhar(dados);
       if (!dados.conectado && dados.canal === 'whatsapp') setTimeout(consultar, 5000);
+      // Durante o silêncio, consultar de novo mantém a contagem andando na tela.
+      else if (dados.silencioRestante > 0) setTimeout(consultar, 10000);
     } catch { /* sessão caiu; o login cuida disso */ }
   };
   consultar();
@@ -2365,8 +2405,27 @@ function blocoRegras(panel) {
     d.clinic.policies.arriveMinutes, 'number');
   const cancelamento = campoLinha('Antecedência mínima para cancelar (horas)',
     d.clinic.policies.cancelHours, 'number');
+  const silencio = campoLinha('Silêncio ao conectar o WhatsApp (minutos)',
+    d.clinic.connectQuietMinutes === undefined ? 5 : d.clinic.connectQuietMinutes, 'number');
+  silencio.input.min = '0';
 
-  panel.append(followUp.box, antes.box, vaga.box, escassez.box, chegada.box, cancelamento.box);
+  panel.append(followUp.box, antes.box, vaga.box, escassez.box, chegada.box, cancelamento.box,
+    silencio.box);
+  panel.append(el('div', 'desc',
+    'Ao conectar, o WhatsApp entrega a fila acumulada em levas, que podem levar minutos. '
+    + 'Nesse tempo nada é respondido automaticamente — as mensagens entram no painel e vão para a '
+    + 'recepção. A janela termina sozinha; 0 desliga.'));
+
+  // Interruptor da pausa: é o que evita o robô responder por cima da secretária.
+  const pausa = el('label', 'switch-row');
+  const marcaPausa = el('input');
+  marcaPausa.type = 'checkbox';
+  marcaPausa.checked = d.clinic.pausarQuandoRecepcaoResponde !== false;
+  pausa.append(marcaPausa,
+    el('span', null, 'Quando a recepção responde, o bot para de responder naquela conversa'));
+  panel.append(pausa);
+  panel.append(el('div', 'desc',
+    'A conversa volta ao automático pelo botão "↩ Devolver ao bot", no alto da conversa.'));
 
   const numeros = (texto) => texto.split(',').map((n) => Number(n.trim()))
     .filter((n) => Number.isFinite(n) && n > 0);
@@ -2393,6 +2452,8 @@ function blocoRegras(panel) {
             arriveMinutes: Number(chegada.input.value) || 15,
             cancelHours: Number(cancelamento.input.value) || 24,
           },
+          connectQuietMinutes: Math.max(0, Number(silencio.input.value) || 0),
+          pausarQuandoRecepcaoResponde: marcaPausa.checked,
         },
       });
       toast('Regras atualizadas');

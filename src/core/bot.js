@@ -60,6 +60,21 @@ class Bot {
       return [];
     }
 
+    /*
+     * A recepção já respondeu esta conversa a mão: daqui para frente ela é da
+     * pessoa, não do robô. O paciente acabou de falar com alguém — receber a
+     * resposta automática por cima desfaz o atendimento e deixa a conversa
+     * confusa. Volta ao automático pelo botão "Devolver ao bot" do painel.
+     *
+     * Repare que isto não é o mesmo que `stage: atendimento humano`, que o
+     * próprio bot marca ao encaminhar (urgência, mídia, pedido de atendente) e
+     * de onde o paciente ainda consegue voltar sozinho escrevendo "menu".
+     */
+    if (contato.recepcaoAssumiu && this.clinic.pausarQuandoRecepcaoResponde !== false) {
+      this.store.commit('contact', contato);
+      return [];
+    }
+
     const respostas = mediaType
       ? this.tratarMidia(contato, mediaType)
       : await this.responder(contato, body, primeiraVez);
