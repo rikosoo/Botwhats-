@@ -37,17 +37,36 @@ class Reminders {
   }
 
   /**
+   * Este lembrete vale para este paciente?
+   *
+   * A régua é do consultório, mas o paciente é caso a caso: tem quem peça
+   * "me avisa só na véspera", tem o que já ligou confirmando. Desmarcar um
+   * lembrete na ficha dele não muda a regra geral nem mexe em mais ninguém.
+   * A lista guarda o que foi desligado — assim, quem nunca foi tocado tem
+   * tudo ligado, que é o padrão.
+   */
+  permitido(contato, kind, offsetDays = null) {
+    if (!contato) return false;
+    const desligados = contato.lembretesDesligados;
+    if (!Array.isArray(desligados) || !desligados.length) return true;
+    return !desligados.includes(kind)
+      && !(offsetDays !== null && desligados.includes(`${kind}:${offsetDays}`));
+  }
+
+  /**
    * Follow-up de quem procurou o consultório e não marcou: 1, 7 e 15 dias
    * depois do contato. Reagenda a partir da conversa mais recente.
    */
   scheduleFollowUps(contact, from = new Date()) {
     this.store.cancelReminders((r) => r.contactId === contact.id && r.kind === 'followup');
-    return this.regra('followUp', this.config.followUpOffsets).map((days) => this.store.addReminder({
-      contactId: contact.id,
-      kind: 'followup',
-      offsetDays: days,
-      dueAt: new Date(from.getTime() + days * DAY_MS).toISOString(),
-    }));
+    return this.regra('followUp', this.config.followUpOffsets)
+      .filter((days) => this.permitido(contact, 'followup', days))
+      .map((days) => this.store.addReminder({
+        contactId: contact.id,
+        kind: 'followup',
+        offsetDays: days,
+        dueAt: new Date(from.getTime() + days * DAY_MS).toISOString(),
+      }));
   }
 
   /**
@@ -57,9 +76,11 @@ class Reminders {
   scheduleBookingReminders(booking, now = new Date()) {
     const startsAt = new Date(booking.startsAt).getTime();
     const criados = [];
+    const contato = this.store.getContact(booking.contactId);
     for (const days of this.regra('booking', this.config.bookingOffsets)) {
       const dueAt = startsAt - days * DAY_MS;
       if (dueAt <= now.getTime()) continue; // a janela já passou
+      if (!this.permitido(contato, 'booking', days)) continue;
       criados.push(this.store.addReminder({
         contactId: booking.contactId,
         bookingId: booking.id,
@@ -80,6 +101,7 @@ class Reminders {
    * marcação e a consulta — desde que não esbarre em outro lembrete já previsto.
    */
   esperaNoMeio(booking, jaCriados, now = new Date()) {
+    if (!this.permitido(this.store.getContact(booking.contactId), 'espera')) return null;
     const inicio = new Date(booking.createdAt || now).getTime();
     const startsAt = new Date(booking.startsAt).getTime();
 
@@ -111,6 +133,7 @@ class Reminders {
   scheduleCheckIn(booking, now = new Date()) {
     const dueAt = new Date(booking.startsAt).getTime() + DAY_MS;
     if (dueAt <= now.getTime()) return null;
+    if (!this.permitido(this.store.getContact(booking.contactId), 'pos_consulta')) return null;
     return this.store.addReminder({
       contactId: booking.contactId,
       bookingId: booking.id,
@@ -125,6 +148,7 @@ class Reminders {
     const service = findService(this.clinic, booking.serviceId);
     const dias = service && service.returnDays ? service.returnDays : 0;
     if (!dias) return null;
+    if (!this.permitido(this.store.getContact(booking.contactId), 'retorno')) return null;
     return this.store.addReminder({
       contactId: booking.contactId,
       bookingId: booking.id,
@@ -136,6 +160,7 @@ class Reminders {
 
   /** Falta: mensagem de reaproximação no dia seguinte. */
   scheduleNoShowReminder(booking, now = new Date()) {
+    if (!this.permitido(this.store.getContact(booking.contactId), 'falta')) return null;
     return this.store.addReminder({
       contactId: booking.contactId,
       bookingId: booking.id,
@@ -169,6 +194,11 @@ class Reminders {
   aindaVale(reminder) {
     const contato = this.store.getContact(reminder.contactId);
     if (!contato || contato.optOut) return false;
+    // Desmarcar na ficha vale também para o que já estava agendado — senão o
+    // lembrete que a recepção acabou de desligar sairia mesmo assim.
+    if (reminder.kind !== 'campanha' && !this.permitido(contato, reminder.kind, reminder.offsetDays)) {
+      return false;
+    }
     if (reminder.kind === 'followup' && this.store.state.bookings.some(
       (b) => b.contactId === contato.id && b.status === 'confirmado' && new Date(b.startsAt) >= new Date(),
     )) return false; // já marcou nesse meio tempo

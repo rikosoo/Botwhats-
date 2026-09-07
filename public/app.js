@@ -14,6 +14,7 @@ const state = {
   naoLidasAnterior: null,   // para avisar só quando chega mensagem nova
   semana: { inicio: null, dias: null, hoje: null, chave: null, buscando: false },
   vista: localStorage.getItem('vistaCelular') || 'contacts',
+  lembretesAbertos: false,   // caixa "quais lembretes este paciente recebe"
 };
 
 /** No celular o painel mostra uma coluna de cada vez. */
@@ -326,6 +327,13 @@ function renderContacts() {
 
     const row = el('div', 'contact-row');
     row.append(el('span', 'contact-name', nomePaciente(c)));
+    // Quem tem lembrete desligado precisa se anunciar na lista: senão a
+    // recepção estranha o silêncio e vai procurar defeito no sistema.
+    if (c.lembretesDesligados && c.lembretesDesligados.length) {
+      const mudo = el('span', 'sino-off', '🔕');
+      mudo.title = `${c.lembretesDesligados.length} lembrete(s) desligado(s) para este paciente`;
+      row.append(mudo);
+    }
     if (c.priority === 'urgente') row.append(el('span', 'badge urgente', 'urgente'));
     else if (c.stage === 'atendimento humano') row.append(el('span', 'badge atencao', 'na fila'));
     else row.append(el('span', `badge ${c.stage.replace(/\s+/g, '-')}`, c.stage));
@@ -395,6 +403,7 @@ function renderChat() {
     $('#chatName').textContent = 'Selecione um paciente';
     $('#chatMeta').textContent = 'O simulador permite testar o atendimento sem conectar o WhatsApp';
     box.append(el('div', 'empty', 'Escolha um paciente à esquerda para ver a conversa.'));
+    $('#lembretesPaciente').hidden = true;
     renderQuickReplies();
     return;
   }
@@ -434,6 +443,8 @@ function renderChat() {
     faixa.append(devolver);
     card.append(faixa);
   }
+
+  renderLembretesDoPaciente(paciente);
 
   const canal = state.data.channel;
   const aviso = $('#avisoCanal');
@@ -489,6 +500,113 @@ const ATALHOS = [
   'Vocês atendem meu plano?', 'Onde fica?', 'Quero falar com a secretária',
   'Estou com dor no peito',
 ];
+
+/**
+ * Quais lembretes este paciente recebe.
+ *
+ * A régua de 7 e 3 dias é do consultório, mas sempre tem o caso à parte: quem
+ * pede para ser avisado só na véspera, quem já ligou confirmando, o paciente
+ * que acha o follow-up demais. Sem esta tela, a recepção só teria a opção de
+ * cancelar lembrete por lembrete na aba Lembretes, um a um, toda semana.
+ *
+ * Tudo começa marcado. O que se guarda é o que foi desligado — assim uma régua
+ * nova criada depois já vale para todo mundo, sem precisar remarcar ninguém.
+ */
+function renderLembretesDoPaciente(paciente) {
+  const caixa = $('#lembretesPaciente');
+  caixa.hidden = !state.lembretesAbertos;
+  if (!state.lembretesAbertos) return;
+  caixa.innerHTML = '';
+
+  const d = state.data;
+  const desligados = new Set(paciente.lembretesDesligados || []);
+
+  const grupos = [
+    ['Quem procurou e não marcou', (d.offsets.followUp || []).map((dias) => [
+      `followup:${dias}`, `${dias} dia(s) depois do contato`,
+    ])],
+    ['Antes da consulta', (d.offsets.booking || []).map((dias) => [
+      `booking:${dias}`,
+      dias === 1 ? '1 dia antes (é o que pede a confirmação)' : `${dias} dias antes`,
+    ])],
+    ['Outros', [
+      ['espera', 'Toque no meio da espera (consulta marcada com folga)'],
+      ['pos_consulta', 'Check-in no dia seguinte à consulta'],
+      ['retorno', 'Lembrete de retorno'],
+      ['falta', 'Mensagem depois de uma falta'],
+    ]],
+  ];
+
+  const cabecalho = el('div', 'row');
+  cabecalho.append(el('span', 'title', `🔔 Lembretes de ${nomePaciente(paciente)}`));
+  const fechar = el('button', 'ghost', '✕');
+  fechar.title = 'Fechar';
+  fechar.addEventListener('click', () => { state.lembretesAbertos = false; renderChat(); });
+  cabecalho.append(fechar);
+  caixa.append(cabecalho);
+  caixa.append(el('div', 'desc',
+    'Tudo marcado é o padrão. Desmarcar vale só para este paciente e já cancela o que estava '
+    + 'agendado; marcar de novo volta a valer nos próximos.'));
+
+  const marcas = [];
+  const salvar = async () => {
+    const fora = marcas.filter((m) => !m.input.checked).map((m) => m.chave);
+    try {
+      const r = await api(`/api/contacts/${paciente.id}/lembretes`, {
+        method: 'PUT', body: { desligados: fora },
+      });
+      toast(r.cancelados
+        ? `Salvo — ${r.cancelados} lembrete(s) já agendado(s) cancelado(s)`
+        : 'Lembretes salvos');
+      await carregar();
+    } catch (err) { toast(err.message); }
+  };
+
+  for (const [titulo, linhas] of grupos) {
+    if (!linhas.length) continue;
+    caixa.append(el('div', 'day-title', titulo));
+    for (const [chave, rotulo] of linhas) {
+      const linha = el('label', 'switch-row');
+      const input = el('input');
+      input.type = 'checkbox';
+      input.checked = !desligados.has(chave);
+      input.addEventListener('change', salvar);
+      linha.append(input, el('span', null, rotulo));
+      caixa.append(linha);
+      marcas.push({ chave, input });
+    }
+  }
+
+  const pendentes = (d.reminders || []).filter(
+    (r) => r.contactId === paciente.id && r.status === 'pending',
+  );
+  caixa.append(el('div', 'desc', pendentes.length
+    ? `${pendentes.length} lembrete(s) na fila para este paciente — a lista completa fica na seção Lembretes.`
+    : 'Nenhum lembrete na fila para este paciente agora.'));
+
+  const acoes = el('div', 'send-row');
+  const todos = el('button', 'ghost', 'Marcar todos');
+  todos.addEventListener('click', async () => {
+    for (const m of marcas) m.input.checked = true;
+    await salvar();
+  });
+  const reagendar = el('button', 'ghost', '↻ Reagendar follow-ups a partir de hoje');
+  reagendar.title = 'Recomeça a contagem de 1/7/15 dias de quem ainda não marcou';
+  reagendar.addEventListener('click', async () => {
+    try {
+      await api(`/api/contacts/${paciente.id}/followups`, { method: 'POST' });
+      toast('Follow-ups reagendados');
+      await carregar();
+    } catch (err) { toast(err.message); }
+  });
+  acoes.append(todos, reagendar);
+  caixa.append(acoes);
+
+  if (paciente.optOut) {
+    caixa.append(el('div', 'warn-note',
+      'Este paciente pediu para não receber mensagens. Nada é enviado, marcado ou não.'));
+  }
+}
 
 function renderQuickReplies() {
   const box = $('#quickReplies');
@@ -2131,11 +2249,11 @@ function ligarEventos() {
     await carregar();
   });
 
-  $('#btnFollowups').addEventListener('click', async () => {
+  $('#btnFollowups').addEventListener('click', () => {
     if (!state.selected) return toast('Selecione um paciente');
-    await api(`/api/contacts/${state.selected}/followups`, { method: 'POST' });
-    toast('Lembretes de 1/7/15 dias reagendados');
-    await carregar();
+    state.lembretesAbertos = !state.lembretesAbertos;
+    renderChat();
+    return undefined;
   });
 
   $('#btnExport').addEventListener('click', async () => {

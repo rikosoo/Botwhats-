@@ -98,7 +98,7 @@ No alto da coluna da direita há uma **caixa de seleção** com as nove seções
 | --- | --- |
 | 📅 Hoje | Agenda do dia; marcar *compareceu* / *faltou* / *confirmar* |
 | 🗓️ Agenda | **Semana inteira**, próximas consultas, lista de espera e horários livres para encaixe |
-| 🔔 Lembretes | Fila do que vai sair, com *enviar agora* e *cancelar* |
+| 🔔 Lembretes | Fila do que vai sair, com *enviar agora* e *cancelar*. Por paciente, use o botão 🔔 Lembretes no alto da conversa |
 | 📣 Disparo | Mensagem para um grupo de pacientes |
 | 📊 Números | Taxa de falta, confirmou × não confirmou, ocupação |
 | 🕘 Atividade | Linha do tempo do que aconteceu |

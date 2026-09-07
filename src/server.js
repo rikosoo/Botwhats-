@@ -241,6 +241,42 @@ function createServer(app) {
     return res.json({ ok: true, naoLidas: 0 });
   });
 
+  /**
+   * Quais lembretes este paciente recebe.
+   *
+   * A régua é do consultório; a exceção é do paciente. Tudo vem marcado — a
+   * lista guarda só o que foi desligado, e o que não estiver nela continua
+   * saindo, inclusive as réguas que a recepção criar depois.
+   */
+  server.put('/api/contacts/:id/lembretes', (req, res) => {
+    const contact = store.getContact(req.params.id);
+    if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });
+    const { desligados } = req.body || {};
+    if (!Array.isArray(desligados)) {
+      return res.status(400).json({ error: 'informe desligados como lista' });
+    }
+    const limpos = [...new Set(desligados
+      .map((chave) => String(chave).trim())
+      .filter((chave) => /^[a-z_]+(:\d{1,3})?$/.test(chave)))];
+
+    contact.lembretesDesligados = limpos;
+    // O que foi desligado agora não pode sair depois: cancela o que já estava
+    // na fila. O caminho de volta é remarcar a caixinha.
+    let cancelados = 0;
+    for (const r of store.state.reminders) {
+      if (r.contactId !== contact.id || r.status !== 'pending' || r.kind === 'campanha') continue;
+      if (reminders.permitido(contact, r.kind, r.offsetDays)) continue;
+      r.status = 'cancelado';
+      cancelados += 1;
+    }
+    if (cancelados) store.commit('reminder', null);
+    store.logEvent('config', limpos.length
+      ? `${contact.name || contact.phone}: ${limpos.length} lembrete(s) desligado(s)`
+      : `${contact.name || contact.phone}: todos os lembretes ligados`);
+    store.commit('contact', contact);
+    return res.json({ desligados: limpos, cancelados });
+  });
+
   server.post('/api/contacts/:id/followups', (req, res) => {
     const contact = store.getContact(req.params.id);
     if (!contact) return res.status(404).json({ error: 'paciente não encontrado' });

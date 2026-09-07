@@ -299,6 +299,11 @@ onde ficam convênios, horários e senha.
   entra lida. O 🔔 no alto liga e desliga o aviso sonoro (fica guardado no navegador).
 - **Simulador**: testa o atendimento inteiro sem conectar o WhatsApp — inclusive o caminho da urgência.
 - **Lembretes**: fila do que vai sair, com *enviar agora* e *cancelar*.
+- **Lembretes por paciente**: o botão **🔔 Lembretes**, no alto da conversa, abre a lista de tudo
+  que aquele paciente pode receber — 7, 3 e 1 dia antes da consulta, os follow-ups de 1/7/15 dias,
+  o toque do meio da espera, o check-in do dia seguinte, o retorno e a mensagem de falta. **Vem
+  tudo marcado**; desmarcar vale só para ele e já cancela o que estava na fila. Marcar de novo
+  volta a valer nos próximos. Quem tem algum lembrete desligado ganha um 🔕 na lista de pacientes.
 - **Números**: taxa de falta dos últimos 30 dias, geral e por profissional, e o comparativo
   **confirmou × não confirmou** — que mostra em pontos percentuais quanto o lembrete de véspera
   está segurando de falta. Consultas que passaram sem ninguém marcar presença aparecem à parte e
@@ -521,6 +526,7 @@ Os dados do consultório e as agendas também podem ser editados pela aba **Ajus
 | `POST` | `/api/professionals/:id/bloqueio` | Bloqueia o dia (`{date}`) ou uma faixa (`{date, start, end}`) |
 | `DELETE` | `/api/professionals/:id/bloqueio/:date` | Cancela o bloqueio daquele dia |
 | `POST` | `/api/contacts/:id/read` | Marca a conversa como lida |
+| `PUT` | `/api/contacts/:id/lembretes` | Quais lembretes o paciente recebe (`{desligados:[…]}`) |
 | `POST` | `/api/whatsapp/silencio` | Encerra o silêncio pós-conexão antes da hora |
 | `POST`/`PUT`/`DELETE` | `/api/services[/:id]` | Tipos de atendimento |
 | `GET` | `/api/slots-dias?professionalId=&serviceId=` | Dias com horário livre para a combinação |
@@ -557,7 +563,7 @@ src/
   integrations/       Google Agenda (OAuth e eventos)
   db/store.js         persistência em JSON (data/db.json)
 public/               painel da recepção (HTML + CSS + JS puros)
-test/                 166 testes com node:test
+test/                 174 testes com node:test
 ```
 
 ## Testes

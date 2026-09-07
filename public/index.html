@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Recepção · Autoatendimento</title>
-  <link rel="stylesheet" href="styles.css?v=14" />
+  <link rel="stylesheet" href="styles.css?v=15" />
 </head>
 <body>
   <div id="loginScreen" class="login-screen" hidden>
@@ -72,12 +72,13 @@
         <button id="btnDetalhes" class="ghost so-celular" type="button" title="Ficha e ações do paciente">ⓘ</button>
         <div class="chat-actions">
           <button id="btnRelease" class="ghost" title="Devolver a conversa para o atendimento automático">↩ Devolver ao bot</button>
-          <button id="btnFollowups" class="ghost" title="Reagendar lembretes de 1/7/15 dias">↻ Lembretes</button>
+          <button id="btnFollowups" class="ghost" title="Escolher quais lembretes este paciente recebe">🔔 Lembretes</button>
           <button id="btnExport" class="ghost" title="Baixar tudo o que guardamos deste paciente (LGPD)">⬇ Dados</button>
           <button id="btnErase" class="ghost danger" title="Apagar os dados pessoais deste paciente (LGPD)">🗑 Apagar</button>
         </div>
       </div>
       <div id="patientCard" class="patient-card"></div>
+      <div id="lembretesPaciente" class="lembretes-box" hidden></div>
       <div id="messages" class="messages"></div>
       <div id="avisoCanal" class="aviso-canal" hidden></div>
       <form id="composer" class="composer">
@@ -125,6 +126,6 @@
   </nav>
 
   <div id="toast" class="toast"></div>
-  <script src="app.js?v=14"></script>
+  <script src="app.js?v=15"></script>
 </body>
 </html>
